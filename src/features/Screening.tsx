@@ -5,7 +5,7 @@ import { roles, responses, uid, type Role, type ResponseMode } from '../domain/t
 import { numeric, response, fmt, units } from '../domain/math';
 import { ChartPanel } from '../components/ChartPanel';
 import { ErrorNote, Field, Metric, SectionHead } from '../components/ui';
-import { Worksheet } from '../components/Worksheet-v0.2.0-2026.10.19';
+import { WorkspaceWorksheet as Worksheet } from '../components/WorkspaceWorksheet-v0.3.1-2026.10.19';
 import type { WorksheetColumn } from '../domain/worksheet-v0.2.0-2026.10.19';
 import { exportExcel } from '../services/download';
 export function Screening({ onImport }: { onImport: () => void }) {
@@ -133,6 +133,7 @@ export function Screening({ onImport }: { onImport: () => void }) {
           }
         />
         <Worksheet
+          sheetId="screening"
           book="对象筛选"
           sheet={w.sheetNames?.screening ?? '分析对象'}
           onRenameSheet={(name) => update((prev) => ({ sheetNames: { ...prev.sheetNames, screening: name } }))}

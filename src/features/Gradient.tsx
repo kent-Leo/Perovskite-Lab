@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Download, Plus } from 'lucide-react';
 import { useWorkspace } from '../state/workspace';
 import { gradient, numeric, fmt, units } from '../domain/math';
-import { Worksheet } from '../components/Worksheet-v0.2.0-2026.10.19';
+import { WorkspaceWorksheet as Worksheet } from '../components/WorkspaceWorksheet-v0.3.1-2026.10.19';
 import type { WorksheetColumn } from '../domain/worksheet-v0.2.0-2026.10.19';
 import { exportExcel } from '../services/download';
 import { ErrorNote, Field, Metric, SectionHead } from '../components/ui';
@@ -124,6 +124,7 @@ export function Gradient() {
               />
             </div>
             <Worksheet
+              sheetId="gradient"
               book="浓度梯度"
               sheet={w.sheetNames?.gradient ?? '梯度配液'}
               onRenameSheet={(name) => update((prev) => ({ sheetNames: { ...prev.sheetNames, gradient: name } }))}

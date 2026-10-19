@@ -13,7 +13,7 @@ import {
   trimPasteGrid,
 } from '../services/paste-2026.10.18';
 import { ErrorNote, Field } from './ui';
-import { Worksheet } from './Worksheet-v0.2.0-2026.10.19';
+import { WorkspaceWorksheet as Worksheet } from './WorkspaceWorksheet-v0.3.1-2026.10.19';
 import { pasteWorksheetRange, type WorksheetColumn } from '../domain/worksheet-v0.2.0-2026.10.19';
 
 export function PasteSpectraTable() {
@@ -185,6 +185,7 @@ export function PasteSpectraTable() {
         </button>
       </div>
       <Worksheet
+        sheetId="raw"
         book="光谱工作台"
         sheet={w.sheetNames?.raw ?? '原始光谱'}
         onRenameSheet={(name) => update((prev) => ({ sheetNames: { ...prev.sheetNames, raw: name } }))}

@@ -15,7 +15,7 @@ import {
 } from '../domain/math';
 import { ChartPanel } from '../components/ChartPanel';
 import { ErrorNote, Field, Metric, SectionHead } from '../components/ui';
-import { Worksheet } from '../components/Worksheet-v0.2.0-2026.10.19';
+import { WorkspaceWorksheet as Worksheet } from '../components/WorkspaceWorksheet-v0.3.1-2026.10.19';
 import type { WorksheetColumn } from '../domain/worksheet-v0.2.0-2026.10.19';
 import { exportExcel } from '../services/download';
 export function Calibration({ onImport }: { onImport: () => void }) {
@@ -225,6 +225,7 @@ export function Calibration({ onImport }: { onImport: () => void }) {
             }
           />
           <Worksheet
+            sheetId="calibration"
             book="校准与检出限"
             sheet={w.sheetNames?.calibration ?? '校准数据'}
             onRenameSheet={(name) => update((prev) => ({ sheetNames: { ...prev.sheetNames, calibration: name } }))}

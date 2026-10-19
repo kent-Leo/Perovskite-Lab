@@ -9,8 +9,11 @@ import {
   type ChartStyle,
   type ResponseMode,
 } from '../domain/types';
+export type WorksheetId = 'raw' | 'samples' | 'screening' | 'calibration' | 'gradient';
+export type ColumnMetadata = Partial<Record<'title' | 'unit' | 'comment', string>>;
 export interface Workspace {
-  sheetNames?: Partial<Record<'raw' | 'samples' | 'screening' | 'calibration' | 'gradient', string>>;
+  sheetMetadata?: Partial<Record<WorksheetId, Record<string, ColumnMetadata>>>;
+  sheetNames?: Partial<Record<WorksheetId, string>>;
   version: 1;
   demo: boolean;
   spectra: Spectrum[];

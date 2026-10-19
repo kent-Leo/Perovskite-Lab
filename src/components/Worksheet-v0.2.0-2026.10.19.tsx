@@ -34,7 +34,7 @@ export type WorksheetChange = {
   kind: 'edit' | 'paste' | 'clear' | 'undo' | 'redo';
   selection: CellSelection;
 };
-type Props = {
+export type WorksheetProps = {
   book: string;
   sheet: string;
   onRenameSheet?: (name: string) => void;
@@ -74,7 +74,7 @@ export function Worksheet({
   invalidCell,
   renderCell,
   minRows = 6,
-}: Props) {
+}: WorksheetProps) {
   const [renaming, setRenaming] = useState(false),
     [sheetDraft, setSheetDraft] = useState(sheet),
     [sheetError, setSheetError] = useState('');

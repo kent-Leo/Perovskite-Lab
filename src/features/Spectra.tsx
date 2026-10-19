@@ -5,7 +5,7 @@ import { roles, uid, type Role } from '../domain/types';
 import { spectrumStats, interpolate, numeric, convertConcentration, fmt } from '../domain/math';
 import { ChartPanel } from '../components/ChartPanel';
 import { ErrorNote, Field, Metric, SectionHead } from '../components/ui';
-import { Worksheet } from '../components/Worksheet-v0.2.0-2026.10.19';
+import { WorkspaceWorksheet as Worksheet } from '../components/WorkspaceWorksheet-v0.3.1-2026.10.19';
 import { units } from '../domain/math';
 import type { WorksheetColumn } from '../domain/worksheet-v0.2.0-2026.10.19';
 import { exportExcel } from '../services/download';
@@ -177,6 +177,7 @@ export function Spectra({
           }
         />
         <Worksheet
+          sheetId="samples"
           book="光谱工作台"
           sheet={w.sheetNames?.samples ?? '样品信息'}
           onRenameSheet={(name) => update((prev) => ({ sheetNames: { ...prev.sheetNames, samples: name } }))}
