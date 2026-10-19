@@ -29,6 +29,7 @@ function WorksheetDemo() {
     },
   ]);
   const [notice, setNotice] = useState('');
+  const [sheet, setSheet] = useState('Sheet1');
   const data = rows.map((row) => {
     const a = numeric(row[1]),
       b = numeric(row[2]);
@@ -50,7 +51,8 @@ function WorksheetDemo() {
       </header>
       <Worksheet
         book="光谱工作簿"
-        sheet="Sheet1"
+        sheet={sheet}
+        onRenameSheet={setSheet}
         columns={columns}
         rows={data}
         onChange={setRows}
@@ -79,7 +81,7 @@ function WorksheetDemo() {
         }}
       />
       <p className="worksheet-demo-note">
-        这是独立组件演示页，数据仅保留在当前页面，刷新后恢复示例。四个分析页面的接入将在后续迭代完成。
+        这是独立组件演示页，数据仅保留在当前页面，刷新后恢复示例。主应用的四个分析页面已接入工作表。
         {notice && <strong role="alert"> {notice}</strong>}
       </p>
       <p>

@@ -1873,3 +1873,9 @@ table,
   padding: 4px;
   cursor: pointer;
 }
+
+.axis-editor { grid-column: 1 / -1; min-width: 0; }
+.axis-editor > .field, .axis-editor > .form-grid { margin-top: 12px; }
+.axis-side-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; padding: 3px; background: #f1f5f2; border-radius: 6px; }
+.axis-side-tabs button { padding: 6px 0; font-size: 12px; background: transparent; border: 0; border-radius: 4px; color: #768778; }
+.axis-side-tabs button.selected { background: white; color: #286f57; box-shadow: 0 1px 3px #243b391a; }

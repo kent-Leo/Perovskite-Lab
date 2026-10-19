@@ -125,7 +125,8 @@ export function Gradient() {
             </div>
             <Worksheet
               book="浓度梯度"
-              sheet="梯度配液"
+              sheet={w.sheetNames?.gradient ?? '梯度配液'}
+              onRenameSheet={(name) => update((prev) => ({ sheetNames: { ...prev.sheetNames, gradient: name } }))}
               minRows={Math.max(1, targets.length)}
               columns={
                 [

@@ -186,7 +186,8 @@ export function PasteSpectraTable() {
       </div>
       <Worksheet
         book="光谱工作台"
-        sheet="原始光谱"
+        sheet={w.sheetNames?.raw ?? '原始光谱'}
+        onRenameSheet={(name) => update((prev) => ({ sheetNames: { ...prev.sheetNames, raw: name } }))}
         columns={worksheetColumns}
         rows={grid}
         preparePaste={(text, at) => {

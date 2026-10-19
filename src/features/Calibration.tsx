@@ -226,7 +226,8 @@ export function Calibration({ onImport }: { onImport: () => void }) {
           />
           <Worksheet
             book="校准与检出限"
-            sheet="校准数据"
+            sheet={w.sheetNames?.calibration ?? '校准数据'}
+            onRenameSheet={(name) => update((prev) => ({ sheetNames: { ...prev.sheetNames, calibration: name } }))}
             minRows={Math.max(1, w.calibration.length)}
             columns={
               [

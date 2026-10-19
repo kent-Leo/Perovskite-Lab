@@ -178,7 +178,8 @@ export function Spectra({
         />
         <Worksheet
           book="光谱工作台"
-          sheet="样品信息"
+          sheet={w.sheetNames?.samples ?? '样品信息'}
+          onRenameSheet={(name) => update((prev) => ({ sheetNames: { ...prev.sheetNames, samples: name } }))}
           onMoveRow={(from, to) => move(from, to - from)}
           minRows={w.spectra.length || 1}
           allowAddRows={false}

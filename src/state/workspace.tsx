@@ -10,6 +10,7 @@ import {
   type ResponseMode,
 } from '../domain/types';
 export interface Workspace {
+  sheetNames?: Partial<Record<'raw' | 'samples' | 'screening' | 'calibration' | 'gradient', string>>;
   version: 1;
   demo: boolean;
   spectra: Spectrum[];

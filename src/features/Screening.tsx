@@ -134,7 +134,8 @@ export function Screening({ onImport }: { onImport: () => void }) {
         />
         <Worksheet
           book="对象筛选"
-          sheet="分析对象"
+          sheet={w.sheetNames?.screening ?? '分析对象'}
+          onRenameSheet={(name) => update((prev) => ({ sheetNames: { ...prev.sheetNames, screening: name } }))}
           onMoveRow={move}
           minRows={Math.max(1, w.objects.length)}
           columns={

@@ -8,7 +8,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from 'react';
-import { Table2, Copy, ClipboardPaste, Plus, Undo2, Redo2 } from 'lucide-react';
+import { Table2, Copy, ClipboardPaste, Plus, Undo2, Redo2, Pencil } from 'lucide-react';
 import { fmt, numeric } from '../domain/math';
 import {
   WORKSHEET_VERSION,
@@ -37,6 +37,7 @@ export type WorksheetChange = {
 type Props = {
   book: string;
   sheet: string;
+  onRenameSheet?: (name: string) => void;
   columns: WorksheetColumn[];
   rows: string[][];
   onChange?: (rows: string[][], change: WorksheetChange) => void;
@@ -58,6 +59,7 @@ const firstCell = { row: 0, column: 0 };
 export function Worksheet({
   book,
   sheet,
+  onRenameSheet,
   columns,
   rows,
   onChange,
@@ -73,6 +75,28 @@ export function Worksheet({
   renderCell,
   minRows = 6,
 }: Props) {
+  const [renaming, setRenaming] = useState(false),
+    [sheetDraft, setSheetDraft] = useState(sheet),
+    [sheetError, setSheetError] = useState('');
+  const renameActive = useRef(false);
+  function startRename() {
+    setSheetDraft(sheet);
+    setSheetError('');
+    renameActive.current = true;
+    setRenaming(true);
+  }
+  function finishRename() {
+    if (!renameActive.current) return;
+    const name = sheetDraft.trim();
+    if (!name || name.length > 40) {
+      setSheetError('标签名须为 1–40 个字符');
+      return;
+    }
+    renameActive.current = false;
+    onRenameSheet?.(name);
+    setRenaming(false);
+    setSheetError('');
+  }
   const root = useRef<HTMLDivElement>(null),
     dragging = useRef(false),
     rowDragging = useRef<number | null>(null),
@@ -626,10 +650,36 @@ export function Worksheet({
         </table>
       </div>
       <div className="worksheet-bottom">
-        <span className="worksheet-sheet-tab">
+        <div className="worksheet-sheet-tab" onDoubleClick={onRenameSheet && !renaming ? startRename : undefined}>
           <Table2 size={13} />
-          {sheet}
-        </span>
+          {renaming ? (
+            <input
+              className="worksheet-sheet-name"
+              aria-label="工作表标签名"
+              aria-invalid={!!sheetError}
+              value={sheetDraft}
+              maxLength={40}
+              autoFocus
+              onFocus={(e) => e.target.select()}
+              onChange={(e) => { setSheetDraft(e.target.value); setSheetError(''); }}
+              onBlur={finishRename}
+              onKeyDown={(e) => {
+                if (e.nativeEvent.isComposing) return;
+                if (e.key === 'Enter') { e.preventDefault(); finishRename(); }
+                if (e.key === 'Escape') {
+                  renameActive.current = false;
+                  setRenaming(false);
+                  setSheetError('');
+                }
+              }}
+            />
+          ) : <span className="worksheet-sheet-label" title={sheet}>{sheet}</span>}
+          {onRenameSheet && !renaming && (
+            <button type="button" aria-label={`重命名标签 ${sheet}`} title="重命名标签（也可双击标签）" onClick={startRename}>
+              <Pencil size={12} />
+            </button>
+          )}
+        </div>
         <span>
           {rows.length} 行 × {columns.length} 列
         </span>
@@ -647,7 +697,7 @@ export function Worksheet({
       </div>
       <div className="worksheet-status" aria-live="polite">
         <span>
-          {message || '拖动或 Shift 选择区域 · Tab / 方向键移动 · F2 编辑 · ⌘/Ctrl+C/V 复制粘贴'}
+          {sheetError || message || '拖动或 Shift 选择区域 · Tab / 方向键移动 · F2 编辑 · ⌘/Ctrl+C/V 复制粘贴'}
         </span>
         <span>
           选中 {stats.cells} 格 · 数值 {stats.numeric}

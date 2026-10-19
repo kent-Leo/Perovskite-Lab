@@ -336,3 +336,14 @@
     padding: 0 10px;
   }
 }
+
+.worksheet-bottom > .worksheet-sheet-tab {
+  padding: 6px 10px;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+.worksheet-sheet-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.worksheet-sheet-tab > svg { flex-shrink: 0; }
+.worksheet-sheet-tab .worksheet-sheet-name { width: 180px; max-width: 100%; min-width: 0; padding: 3px 6px; font-size: 12px; }
+.worksheet-sheet-tab button { display: inline-flex; flex-shrink: 0; }
