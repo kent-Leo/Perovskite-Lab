@@ -1,3 +1,4 @@
+import { APP_VERSION } from '../version-v0.3.0-2026.10.19';
 export function dateStamp() {
   const p = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Shanghai',
@@ -17,7 +18,7 @@ export function downloadBlob(blob: Blob, name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 export function filename(base: string, ext: string) {
-  return `${base.replace(/[<>:"/\\|?*]/g, '_')}-${dateStamp()}.${ext}`;
+  return `${base.replace(/[<>:"/\\|?*]/g, '_')}-v${APP_VERSION}-${dateStamp()}.${ext}`;
 }
 export async function exportExcel(rows: Record<string, unknown>[], name: string) {
   const XLSX = await import('xlsx');

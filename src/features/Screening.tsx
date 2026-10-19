@@ -1,21 +1,15 @@
-import { useMemo, useState } from 'react';
-import { Plus, Trash2, ChevronUp, ChevronDown, GripVertical, Upload } from 'lucide-react';
+import { useMemo } from 'react';
+import { Plus, Trash2, ChevronUp, ChevronDown, Upload } from 'lucide-react';
 import { useWorkspace } from '../state/workspace';
-import {
-  roles,
-  responses,
-  uid,
-  type ObjectRow,
-  type Role,
-  type ResponseMode,
-} from '../domain/types';
+import { roles, responses, uid, type Role, type ResponseMode } from '../domain/types';
 import { numeric, response, fmt, units } from '../domain/math';
 import { ChartPanel } from '../components/ChartPanel';
 import { ErrorNote, Field, Metric, SectionHead } from '../components/ui';
+import { Worksheet } from '../components/Worksheet-v0.2.0-2026.10.19';
+import type { WorksheetColumn } from '../domain/worksheet-v0.2.0-2026.10.19';
 import { exportExcel } from '../services/download';
 export function Screening({ onImport }: { onImport: () => void }) {
   const { w, update, notify } = useWorkspace();
-  const [drag, setDrag] = useState<number | null>(null);
   const result = useMemo(() => {
     try {
       const blank = w.objects.find((o) => o.id === w.blankId),
@@ -31,8 +25,6 @@ export function Screening({ onImport }: { onImport: () => void }) {
       return { values: [], f0: NaN, error: (e as Error).message };
     }
   }, [w.objects, w.blankId, w.screenMode]);
-  const patch = (id: string, p: Partial<ObjectRow>) =>
-    update((prev) => ({ objects: prev.objects.map((o) => (o.id === id ? { ...o, ...p } : o)) }));
   function move(from: number, to: number) {
     if (to < 0 || to >= w.objects.length) return;
     const rows = [...w.objects];
@@ -108,7 +100,7 @@ export function Screening({ onImport }: { onImport: () => void }) {
       <section className="panel">
         <SectionHead
           title="自定义分析对象"
-          detail="可拖动调整顺序，也可使用上下移动按钮。空白参考需在上方明确指定。"
+          detail="支持区域粘贴、撤销与重做；可拖动行号或使用上下按钮排序。空白参考需在上方明确指定。"
           action={
             <div className="button-group">
               <button className="small-button" onClick={onImport}>
@@ -140,133 +132,111 @@ export function Screening({ onImport }: { onImport: () => void }) {
             </div>
           }
         />
-        <div className="table-scroll">
-          <table className="editable-table">
-            <thead>
-              <tr>
-                <th>顺序</th>
-                <th>分析对象名称</th>
-                <th>角色</th>
-                <th>浓度</th>
-                <th>单位</th>
-                <th>荧光强度 F</th>
-                <th>备注</th>
-                <th>响应值</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {w.objects.map((o, i) => (
-                <tr
-                  key={o.id}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    if (drag !== null) move(drag, i);
-                    setDrag(null);
-                  }}
+        <Worksheet
+          book="对象筛选"
+          sheet="分析对象"
+          onMoveRow={move}
+          minRows={Math.max(1, w.objects.length)}
+          columns={
+            [
+              { key: 'name', title: '分析对象名称', designation: 'Label' },
+              {
+                key: 'role',
+                title: '角色',
+                type: 'select',
+                options: Object.entries(roles).map(([value, label]) => ({ value, label })),
+              },
+              { key: 'concentration', title: '浓度', type: 'number' },
+              {
+                key: 'unit',
+                title: '单位',
+                type: 'select',
+                options: units.map((value) => ({ value, label: value })),
+              },
+              {
+                key: 'intensity',
+                title: '荧光强度 F',
+                designation: 'Y',
+                unit: 'a.u.',
+                type: 'number',
+              },
+              { key: 'notes', title: '备注' },
+              {
+                key: 'response',
+                title: '响应值',
+                designation: 'Result',
+                comment: responses[w.screenMode],
+                readOnly: true,
+              },
+              { key: 'actions', title: '排序 / 删除', readOnly: true },
+            ] satisfies WorksheetColumn[]
+          }
+          rows={w.objects.map((o, i) => [
+            o.name,
+            o.role,
+            o.concentration,
+            o.unit,
+            o.intensity,
+            o.notes,
+            fmt(result.values[i], 8),
+            '',
+          ])}
+          onChange={(rows) =>
+            update({
+              objects: rows.map((r, i) => ({
+                id: w.objects[i]?.id ?? uid(),
+                name: r[0],
+                role: r[1] as Role,
+                concentration: r[2],
+                unit: r[3],
+                intensity: r[4],
+                notes: r[5],
+              })),
+              blankId: rows[w.objects.findIndex((o) => o.id === w.blankId)] ? w.blankId : '',
+            })
+          }
+          cellLabel={(i, c) =>
+            `${['对象名称', '对象角色', '对象浓度', '对象单位', '对象强度', '对象备注', '对象响应', '对象操作'][c]} ${i + 1}`
+          }
+          invalidCell={(i, c) =>
+            c === 2 &&
+            !!w.objects[i]?.concentration.trim() &&
+            (numeric(w.objects[i].concentration) ?? -1) < 0
+          }
+          renderCell={(i, c) => {
+            const o = w.objects[i];
+            if (c !== 7 || !o) return undefined;
+            return (
+              <div className="row-actions">
+                <button
+                  aria-label={`上移对象 ${i + 1}`}
+                  disabled={i === 0}
+                  onClick={() => move(i, i - 1)}
                 >
-                  <td>
-                    <button
-                      className="drag-handle"
-                      draggable
-                      aria-label={`拖动对象 ${i + 1}`}
-                      onDragStart={() => setDrag(i)}
-                      onDragEnd={() => setDrag(null)}
-                    >
-                      <GripVertical size={16} />
-                    </button>
-                  </td>
-                  <td>
-                    <input
-                      aria-label={`对象名称 ${i + 1}`}
-                      value={o.name}
-                      onChange={(e) => patch(o.id, { name: e.target.value })}
-                    />
-                  </td>
-                  <td>
-                    <select
-                      aria-label={`对象角色 ${i + 1}`}
-                      value={o.role}
-                      onChange={(e) => patch(o.id, { role: e.target.value as Role })}
-                    >
-                      {Object.entries(roles).map(([v, l]) => (
-                        <option key={v} value={v}>
-                          {l}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>
-                    <input
-                      aria-label={`对象浓度 ${i + 1}`}
-                      type="number"
-                      min={0}
-                      value={o.concentration}
-                      onChange={(e) => patch(o.id, { concentration: e.target.value })}
-                    />
-                  </td>
-                  <td>
-                    <select
-                      aria-label={`对象单位 ${i + 1}`}
-                      value={o.unit}
-                      onChange={(e) => patch(o.id, { unit: e.target.value })}
-                    >
-                      {units.map((u) => (
-                        <option key={u}>{u}</option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>
-                    <input
-                      aria-label={`对象强度 ${i + 1}`}
-                      type="number"
-                      value={o.intensity}
-                      onChange={(e) => patch(o.id, { intensity: e.target.value })}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      aria-label={`对象备注 ${i + 1}`}
-                      value={o.notes}
-                      onChange={(e) => patch(o.id, { notes: e.target.value })}
-                    />
-                  </td>
-                  <td className="number-cell">{fmt(result.values[i], 5)}</td>
-                  <td>
-                    <div className="row-actions">
-                      <button
-                        aria-label={`上移对象 ${i + 1}`}
-                        disabled={i === 0}
-                        onClick={() => move(i, i - 1)}
-                      >
-                        <ChevronUp size={15} />
-                      </button>
-                      <button
-                        aria-label={`下移对象 ${i + 1}`}
-                        disabled={i === w.objects.length - 1}
-                        onClick={() => move(i, i + 1)}
-                      >
-                        <ChevronDown size={15} />
-                      </button>
-                      <button
-                        aria-label={`删除对象 ${i + 1}`}
-                        onClick={() =>
-                          update({
-                            objects: w.objects.filter((r) => r.id !== o.id),
-                            blankId: w.blankId === o.id ? '' : w.blankId,
-                          })
-                        }
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  <ChevronUp size={15} />
+                </button>
+                <button
+                  aria-label={`下移对象 ${i + 1}`}
+                  disabled={i === w.objects.length - 1}
+                  onClick={() => move(i, i + 1)}
+                >
+                  <ChevronDown size={15} />
+                </button>
+                <button
+                  aria-label={`删除对象 ${i + 1}`}
+                  onClick={() =>
+                    update({
+                      objects: w.objects.filter((r) => r.id !== o.id),
+                      blankId: w.blankId === o.id ? '' : w.blankId,
+                    })
+                  }
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            );
+          }}
+        />
         <div className="panel-foot">
           <span className="muted">浓度与单位用于记录实验条件，柱高由响应方式计算。</span>
           <button

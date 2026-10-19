@@ -1,20 +1,29 @@
 import { useMemo } from 'react';
 import { Download, Plus } from 'lucide-react';
 import { useWorkspace } from '../state/workspace';
-import { gradient, parseNumbers, numeric, fmt, units } from '../domain/math';
+import { gradient, numeric, fmt, units } from '../domain/math';
+import { Worksheet } from '../components/Worksheet-v0.2.0-2026.10.19';
+import type { WorksheetColumn } from '../domain/worksheet-v0.2.0-2026.10.19';
 import { exportExcel } from '../services/download';
 import { ErrorNote, Field, Metric, SectionHead } from '../components/ui';
 export function Gradient() {
   const { w, update, notify } = useWorkspace(),
     g = w.gradient;
   const set = (p: Partial<typeof g>) => update({ gradient: { ...g, ...p } });
+  // Keep blank and invalid cells in the editable input; do not filter/reindex draft rows.
+  const targets = /[,，;；\t ]/.test(g.targets)
+    ? g.targets
+        .trim()
+        .split(/[\s,，;；]+/)
+        .filter(Boolean)
+    : g.targets.split('\n');
   const result = useMemo(() => {
     try {
       return {
         rows: gradient(
           numeric(g.stock) ?? NaN,
           numeric(g.volume) ?? NaN,
-          parseNumbers(g.targets),
+          targets.map((value) => numeric(value) ?? NaN),
           numeric(g.fixed) ?? NaN,
         ),
         error: '',
@@ -100,63 +109,92 @@ export function Gradient() {
               </button>
             }
           />
-          {result.error ? (
-            <ErrorNote>{result.error}</ErrorNote>
-          ) : (
-            <>
-              <div className="metrics-row three">
-                <Metric label="浓度点" value={String(result.rows.length)} unit="组" />
-                <Metric label="每组定容" value={fmt(numeric(g.volume))} unit="mL" />
-                <Metric
-                  label="母液总用量"
-                  value={fmt(
-                    result.rows.reduce((s, r) => s + r.stockUL, 0),
-                    5,
-                  )}
-                  unit="μL"
-                />
-              </div>
-              <div className="table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>组别</th>
-                      <th>目标 / {g.unit}</th>
-                      <th>母液 / μL</th>
-                      <th>固定添加 / mL</th>
-                      <th>预计溶剂 / mL</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result.rows.map((r) => (
-                      <tr key={r.index}>
-                        <td>
-                          <span className="group-pill">C{r.index - 1}</span>
-                        </td>
-                        <td>{fmt(r.concentration, 6)}</td>
-                        <td className="emphasis-number">{fmt(r.stockUL, 6)}</td>
-                        <td>{fmt(r.fixedML, 6)}</td>
-                        <td>{fmt(r.solventML, 6)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {result.rows.some((r) => r.stockUL > 0 && r.stockUL < 1) && (
-                <div className="notice-note">
-                  部分加样体积小于 1 μL，建议先配制较低浓度的中间液。
-                </div>
-              )}
-              <div className="gradient-equation">
-                <span>加入母液</span>
-                <Plus size={16} />
-                <span>固定添加组分</span>
-                <Plus size={16} />
-                <strong>溶剂定容至 {g.volume} mL</strong>
-              </div>
-              <p className="muted">表中补加溶剂为体积差估计；实际配制应以最终定容体积为准。</p>
-            </>
-          )}
+          {result.error && <ErrorNote>{result.error}</ErrorNote>}
+          <>
+            <div className="metrics-row three">
+              <Metric label="浓度点" value={String(result.rows.length)} unit="组" />
+              <Metric label="每组定容" value={fmt(numeric(g.volume))} unit="mL" />
+              <Metric
+                label="母液总用量"
+                value={fmt(
+                  result.rows.reduce((s, r) => s + r.stockUL, 0),
+                  5,
+                )}
+                unit="μL"
+              />
+            </div>
+            <Worksheet
+              book="浓度梯度"
+              sheet="梯度配液"
+              minRows={Math.max(1, targets.length)}
+              columns={
+                [
+                  {
+                    key: 'target',
+                    title: '目标浓度',
+                    designation: 'X',
+                    unit: g.unit,
+                    type: 'number',
+                  },
+                  { key: 'group', title: '组别', designation: 'Label', readOnly: true },
+                  {
+                    key: 'stock',
+                    title: '母液体积',
+                    designation: 'Result',
+                    unit: 'μL',
+                    readOnly: true,
+                  },
+                  { key: 'fixed', title: '固定添加', unit: 'mL', readOnly: true },
+                  { key: 'solvent', title: '预计溶剂', unit: 'mL', readOnly: true },
+                  { key: 'final', title: '最终体积', unit: 'mL', readOnly: true },
+                  { key: 'actions', title: '删除', readOnly: true },
+                ] satisfies WorksheetColumn[]
+              }
+              rows={targets.map((value, i) => {
+                const r = result.rows[i];
+                return [
+                  value,
+                  `C${i}`,
+                  r ? String(r.stockUL) : '',
+                  r ? String(r.fixedML) : '',
+                  r ? String(r.solventML) : '',
+                  r ? String(r.finalML) : '',
+                  '',
+                ];
+              })}
+              onChange={(rows) => set({ targets: rows.map((r) => r[0]).join('\n') })}
+              cellLabel={(i, c) =>
+                `${['梯度目标浓度', '梯度组别', '梯度母液体积', '梯度固定添加', '梯度预计溶剂', '梯度最终体积', '梯度操作'][c]} ${i + 1}`
+              }
+              invalidCell={(i, c) =>
+                c === 0 &&
+                ((numeric(targets[i]) ?? -1) < 0 ||
+                  (numeric(targets[i]) ?? 0) > (numeric(g.stock) ?? 0))
+              }
+              renderCell={(i, c) =>
+                c === 6 && i < targets.length ? (
+                  <button
+                    className="text-button"
+                    aria-label={`删除梯度 ${i + 1}`}
+                    onClick={() => set({ targets: targets.filter((_, j) => j !== i).join('\n') })}
+                  >
+                    删除
+                  </button>
+                ) : undefined
+              }
+            />
+            {result.rows.some((r) => r.stockUL > 0 && r.stockUL < 1) && (
+              <div className="notice-note">部分加样体积小于 1 μL，建议先配制较低浓度的中间液。</div>
+            )}
+            <div className="gradient-equation">
+              <span>加入母液</span>
+              <Plus size={16} />
+              <span>固定添加组分</span>
+              <Plus size={16} />
+              <strong>溶剂定容至 {g.volume} mL</strong>
+            </div>
+            <p className="muted">表中补加溶剂为体积差估计；实际配制应以最终定容体积为准。</p>
+          </>
         </section>
       </div>
     </>

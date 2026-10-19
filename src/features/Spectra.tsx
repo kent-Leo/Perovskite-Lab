@@ -1,10 +1,13 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, ChevronUp, ChevronDown, ArrowUpRight } from 'lucide-react';
 import { useWorkspace } from '../state/workspace';
-import { palette, roles, uid, type Spectrum, type Role } from '../domain/types';
+import { roles, uid, type Role } from '../domain/types';
 import { spectrumStats, interpolate, numeric, convertConcentration, fmt } from '../domain/math';
 import { ChartPanel } from '../components/ChartPanel';
 import { ErrorNote, Field, Metric, SectionHead } from '../components/ui';
+import { Worksheet } from '../components/Worksheet-v0.2.0-2026.10.19';
+import { units } from '../domain/math';
+import type { WorksheetColumn } from '../domain/worksheet-v0.2.0-2026.10.19';
 import { exportExcel } from '../services/download';
 export function Spectra({
   onImport,
@@ -40,12 +43,10 @@ export function Spectra({
     };
   }, [shown, normalize]);
   const stats = active ? spectrumStats(active.points) : null;
-  const patch = (id: string, p: Partial<Spectrum>) =>
-    update((prev) => ({ spectra: prev.spectra.map((s) => (s.id === id ? { ...s, ...p } : s)) }));
   function move(i: number, by: number) {
     update((prev) => {
       const arr = [...prev.spectra];
-      [arr[i], arr[i + by]] = [arr[i + by], arr[i]];
+      arr.splice(i + by, 0, arr.splice(i, 1)[0]);
       return { spectra: arr };
     });
   }
@@ -153,10 +154,21 @@ export function Spectra({
         <Metric label="半峰宽 FWHM" value={fmt(stats?.fwhm, 4)} unit="nm" />
         <Metric label="原始峰面积" value={fmt(stats?.area, 5)} unit="a.u.·nm" />
       </div>
+      <div className="analysis-controls">
+        <Field label="当前查看样品">
+          <select value={active?.id ?? ''} onChange={(e) => setSelected(e.target.value)}>
+            {w.spectra.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
       <section className="panel">
         <SectionHead
           title="样品与分析对象"
-          detail="名称、角色和浓度均可自定义。点击样品查看原始峰值。"
+          detail="名称、角色和浓度均可自定义。通过上方选择样品查看原始峰值。"
           action={
             <button className="small-button" onClick={onImport}>
               <Plus size={16} />
@@ -164,113 +176,97 @@ export function Spectra({
             </button>
           }
         />
-        <div className="table-scroll">
-          <table className="editable-table">
-            <thead>
-              <tr>
-                <th>显示</th>
-                <th>样品名称</th>
-                <th>角色</th>
-                <th>浓度</th>
-                <th>单位</th>
-                <th>颜色</th>
-                <th>数据来源</th>
-                <th>排序 / 删除</th>
-              </tr>
-            </thead>
-            <tbody>
-              {w.spectra.map((s, i) => (
-                <tr key={s.id} className={active?.id === s.id ? 'active-row' : ''}>
-                  <td>
-                    <input
-                      aria-label={`显示 ${s.name}`}
-                      type="checkbox"
-                      checked={s.visible}
-                      onChange={(e) => patch(s.id, { visible: e.target.checked })}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      aria-label={`样品名称 ${i + 1}`}
-                      value={s.name}
-                      onFocus={() => setSelected(s.id)}
-                      onChange={(e) => patch(s.id, { name: e.target.value })}
-                    />
-                  </td>
-                  <td>
-                    <select
-                      aria-label={`样品角色 ${i + 1}`}
-                      value={s.role}
-                      onChange={(e) => patch(s.id, { role: e.target.value as Role })}
-                    >
-                      {Object.entries(roles).map(([v, l]) => (
-                        <option key={v} value={v}>
-                          {l}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>
-                    <input
-                      aria-label={`样品浓度 ${i + 1}`}
-                      type="number"
-                      min={0}
-                      value={s.concentration}
-                      placeholder="未设置"
-                      onChange={(e) => patch(s.id, { concentration: e.target.value })}
-                    />
-                  </td>
-                  <td>
-                    <select
-                      aria-label={`样品单位 ${i + 1}`}
-                      value={s.unit}
-                      onChange={(e) => patch(s.id, { unit: e.target.value })}
-                    >
-                      {['mol/L', 'mmol/L', 'μM', 'nM', 'mg/L', 'μg/L'].map((u) => (
-                        <option key={u}>{u}</option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>
-                    <input
-                      aria-label={`样品颜色 ${i + 1}`}
-                      type="color"
-                      value={s.color}
-                      onChange={(e) => patch(s.id, { color: e.target.value })}
-                    />
-                  </td>
-                  <td className="source-cell" title={s.source}>
-                    {s.source}
-                  </td>
-                  <td>
-                    <div className="row-actions">
-                      <button
-                        aria-label={`上移样品 ${i + 1}`}
-                        disabled={i === 0}
-                        onClick={() => move(i, -1)}
-                      >
-                        <ChevronUp size={15} />
-                      </button>
-                      <button
-                        aria-label={`下移样品 ${i + 1}`}
-                        disabled={i === w.spectra.length - 1}
-                        onClick={() => move(i, 1)}
-                      >
-                        <ChevronDown size={15} />
-                      </button>
-                      <button
-                        aria-label={`删除样品 ${i + 1}`}
-                        onClick={() => update({ spectra: w.spectra.filter((r) => r.id !== s.id) })}
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Worksheet
+          book="光谱工作台"
+          sheet="样品信息"
+          onMoveRow={(from, to) => move(from, to - from)}
+          minRows={w.spectra.length || 1}
+          allowAddRows={false}
+          rowLimit={w.spectra.length}
+          columns={
+            [
+              { key: 'visible', title: '显示', type: 'checkbox' },
+              { key: 'name', title: '样品名称', designation: 'Label' },
+              {
+                key: 'role',
+                title: '角色',
+                type: 'select',
+                options: Object.entries(roles).map(([value, label]) => ({ value, label })),
+              },
+              { key: 'concentration', title: '浓度', type: 'number' },
+              {
+                key: 'unit',
+                title: '单位',
+                type: 'select',
+                options: units.map((value) => ({ value, label: value })),
+              },
+              { key: 'color', title: '颜色', type: 'color' },
+              { key: 'source', title: '数据来源', readOnly: true },
+              { key: 'actions', title: '排序 / 删除', readOnly: true },
+            ] satisfies WorksheetColumn[]
+          }
+          rows={w.spectra.map((s) => [
+            String(s.visible),
+            s.name,
+            s.role,
+            s.concentration,
+            s.unit,
+            s.color,
+            s.source,
+            '',
+          ])}
+          onChange={(rows) =>
+            update({
+              spectra: w.spectra.map((s, i) => ({
+                ...s,
+                visible: rows[i]?.[0] === 'true',
+                name: rows[i]?.[1] ?? '',
+                role: (rows[i]?.[2] ?? '') as Role,
+                concentration: rows[i]?.[3] ?? '',
+                unit: rows[i]?.[4] ?? '',
+                color: rows[i]?.[5] ?? '',
+              })),
+            })
+          }
+          cellLabel={(i, c) =>
+            c === 0
+              ? `显示 ${w.spectra[i]?.name ?? ''}`
+              : `${['显示', '样品名称', '样品角色', '样品浓度', '样品单位', '样品颜色', '数据来源', '样品操作'][c]} ${i + 1}`
+          }
+          invalidCell={(i, c) =>
+            c === 3 &&
+            !!w.spectra[i]?.concentration.trim() &&
+            (numeric(w.spectra[i].concentration) ?? -1) < 0
+          }
+          renderCell={(i, c) => {
+            const s = w.spectra[i];
+            if (c !== 7 || !s) return undefined;
+            return (
+              <div className="row-actions">
+                <button
+                  aria-label={`上移样品 ${i + 1}`}
+                  disabled={i === 0}
+                  onClick={() => move(i, -1)}
+                >
+                  <ChevronUp size={15} />
+                </button>
+                <button
+                  aria-label={`下移样品 ${i + 1}`}
+                  disabled={i === w.spectra.length - 1}
+                  onClick={() => move(i, 1)}
+                >
+                  <ChevronDown size={15} />
+                </button>
+                <button
+                  aria-label={`删除样品 ${i + 1}`}
+                  onClick={() => update({ spectra: w.spectra.filter((r) => r.id !== s.id) })}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            );
+          }}
+        />
         {!w.spectra.length && <div className="empty">导入文件以添加第一条光谱</div>}
         <div className="panel-foot">
           <span className="muted">FWHM 使用零基线主峰；测量范围不足时显示“—”。</span>

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ClipboardEvent } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { ClipboardPaste, Plus, ArrowDownToLine, Trash2 } from 'lucide-react';
 import { useWorkspace } from '../state/workspace';
 import { numeric } from '../domain/math';
@@ -13,13 +13,13 @@ import {
   trimPasteGrid,
 } from '../services/paste-2026.10.18';
 import { ErrorNote, Field } from './ui';
+import { Worksheet } from './Worksheet-v0.2.0-2026.10.19';
+import { pasteWorksheetRange, type WorksheetColumn } from '../domain/worksheet-v0.2.0-2026.10.19';
 
-const PAGE_SIZE = 20;
 export function PasteSpectraTable() {
   const { w, update, notify } = useWorkspace();
   const [grid, setGrid] = useState(emptyPasteGrid),
     [mapping, setMapping] = useState<Mapping>(() => suggestPasteMapping([], w.calUnit)),
-    [page, setPage] = useState(0),
     [error, setError] = useState(''),
     [plotted, setPlotted] = useState(false);
   const batch = useRef(new Map<number, string>());
@@ -38,22 +38,9 @@ export function PasteSpectraTable() {
     setMapping((m) => ({ ...m, ...changes }));
     setError('');
   };
-  function paste(e: ClipboardEvent<HTMLInputElement>, row: number, column: number) {
-    e.preventDefault();
-    try {
-      const next = pasteIntoGrid(grid, e.clipboardData.getData('text/plain'), row, column);
-      setGrid(next);
-      if (!rows.length || (row === 0 && column === 0))
-        setMapping(suggestPasteMapping(next, w.calUnit));
-      setError('');
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
   function grow(extraRows: number, extraColumns: number) {
     try {
       setGrid(growPasteGrid(grid, grid.length + extraRows, grid[0].length + extraColumns));
-      if (extraRows) setPage(Math.floor(grid.length / PAGE_SIZE));
       setError('');
     } catch (e) {
       setError((e as Error).message);
@@ -91,7 +78,14 @@ export function PasteSpectraTable() {
       }),
     );
   }
-  const pageCount = Math.ceil(grid.length / PAGE_SIZE);
+  const worksheetColumns: WorksheetColumn[] = columns.map((col) => ({
+    key: `raw-${col}`,
+    title: col === mapping.x ? '波长' : `强度 ${col}`,
+    designation: col === mapping.x ? 'X' : mapping.ys.includes(col) ? 'Y' : 'Meta',
+    unit: col === mapping.x ? 'nm' : 'a.u.',
+    type: 'text',
+    comment: col === mapping.x ? '波长列' : '通过上方复选框选择强度列',
+  }));
   return (
     <section className="paste-panel" aria-labelledby="paste-title">
       <div className="paste-heading">
@@ -110,7 +104,6 @@ export function PasteSpectraTable() {
           onClick={() => {
             setGrid(emptyPasteGrid());
             setMapping(suggestPasteMapping([], w.calUnit));
-            setPage(0);
             setError('');
             setPlotted(false);
             batch.current = new Map();
@@ -167,122 +160,70 @@ export function PasteSpectraTable() {
           自动识别列与起始行
         </button>
       </div>
-      <div
-        className="table-scroll paste-grid-scroll"
-        tabIndex={0}
-        aria-label="原始光谱数据表，可横向滚动"
-      >
-        <table className="paste-grid" aria-label="粘贴原始光谱数据表" aria-describedby="paste-hint">
-          <thead>
-            <tr>
-              <th scope="col">行</th>
-              {columns.map((col) => (
-                <th scope="col" key={col}>
-                  <div>第 {col + 1} 列</div>
-                  {col === mapping.x ? (
-                    <span className="paste-wave-label">波长 / nm</span>
-                  ) : (
-                    <label>
-                      <input
-                        type="checkbox"
-                        aria-label={`第 ${col + 1} 列作为强度`}
-                        checked={mapping.ys.includes(col)}
-                        onChange={(e) =>
-                          patch({
-                            ys: e.target.checked
-                              ? [...mapping.ys, col].sort((a, b) => a - b)
-                              : mapping.ys.filter((y) => y !== col),
-                          })
-                        }
-                      />
-                      强度
-                    </label>
-                  )}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {grid.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((cells, offset) => {
-              const row = page * PAGE_SIZE + offset,
-                dataRow = row >= mapping.start - 1 + (mapping.header ? 1 : 0),
-                nonempty = cells.some((v) => v.trim());
-              return (
-                <tr key={row}>
-                  <th scope="row">{row + 1}</th>
-                  {cells.map((value, col) => {
-                    const invalid =
-                      dataRow &&
-                      nonempty &&
-                      (col === mapping.x || mapping.ys.includes(col)) &&
-                      numeric(value) === null;
-                    return (
-                      <td key={col}>
-                        <input
-                          type="text"
-                          autoComplete="off"
-                          spellCheck={false}
-                          aria-label={`原始数据第 ${row + 1} 行第 ${col + 1} 列`}
-                          aria-invalid={invalid || undefined}
-                          value={value}
-                          placeholder={row === 0 ? (col === 0 ? '波长或列名' : '强度或样品名') : ''}
-                          onPaste={(e) => paste(e, row, col)}
-                          onChange={(e) => {
-                            const next = grid.map((r, i) =>
-                              i === row ? r.map((v, j) => (j === col ? e.target.value : v)) : r,
-                            );
-                            setGrid(next);
-                            setError('');
-                          }}
-                        />
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <div className="paste-options">
+        {columns
+          .filter((col) => col !== mapping.x)
+          .map((col) => (
+            <label className="check-line" key={col}>
+              <input
+                type="checkbox"
+                aria-label={`第 ${col + 1} 列作为强度`}
+                checked={mapping.ys.includes(col)}
+                onChange={(e) =>
+                  patch({
+                    ys: e.target.checked
+                      ? [...mapping.ys, col].sort((a, b) => a - b)
+                      : mapping.ys.filter((y) => y !== col),
+                  })
+                }
+              />
+              第 {col + 1} 列作为强度
+            </label>
+          ))}
+        <button className="small-button" onClick={() => grow(0, 1)}>
+          <Plus size={14} /> 添加强度列
+        </button>
       </div>
-      <p className="paste-scroll-hint">
-        表格可左右滑动；长数据可翻页查看。粘贴会覆盖所选位置的区域，新一批数据可先清空表格。
-      </p>
-      <div className="paste-grid-actions">
-        <div>
-          <button className="small-button" onClick={() => grow(10, 0)}>
-            <Plus size={14} /> 添加 10 行
-          </button>
-          <button className="small-button" onClick={() => grow(0, 1)}>
-            <Plus size={14} /> 添加强度列
-          </button>
-        </div>
-        <div className="paste-pager">
-          <span>
-            {grid.length} 行 × {grid[0].length} 列
-          </span>
-          {pageCount > 1 && (
-            <>
-              <button
-                className="small-button"
-                disabled={page === 0}
-                onClick={() => setPage((p) => p - 1)}
-              >
-                上一页
-              </button>
-              <span>
-                {page + 1} / {pageCount}
-              </span>
-              <button
-                className="small-button"
-                disabled={page + 1 === pageCount}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                下一页
-              </button>
-            </>
-          )}
-        </div>
-      </div>
+      <Worksheet
+        book="光谱工作台"
+        sheet="原始光谱"
+        columns={worksheetColumns}
+        rows={grid}
+        preparePaste={(text, at) => {
+          // Determine the required width first; validate and clear missing trailing cells atomically.
+          const expanded = pasteIntoGrid(grid, text, at.row, at.column);
+          const cols: WorksheetColumn[] = expanded[0].map((_, i) => ({
+            key: `raw-${i}`,
+            title: `第 ${i + 1} 列`,
+            type: 'text',
+          }));
+          return pasteWorksheetRange(grid, cols, at, text);
+        }}
+        onChange={(next, change) => {
+          setGrid(
+            growPasteGrid(
+              next,
+              Math.max(6, next.length),
+              Math.max(3, next[0]?.length ?? grid[0].length),
+            ),
+          );
+          if (
+            change.kind === 'paste' &&
+            (!rows.length ||
+              (change.selection.anchor.row === 0 && change.selection.anchor.column === 0))
+          )
+            setMapping(suggestPasteMapping(next, w.calUnit));
+          setError('');
+        }}
+        onAddColumn={() => grow(0, 1)}
+        cellLabel={(row, col) => `原始数据第 ${row + 1} 行第 ${col + 1} 列`}
+        invalidCell={(row, col) =>
+          row >= mapping.start - 1 + (mapping.header ? 1 : 0) &&
+          !!grid[row]?.some((v) => v.trim()) &&
+          (col === mapping.x || mapping.ys.includes(col)) &&
+          numeric(grid[row]?.[col]) === null
+        }
+      />
       {(error || result.error) && <ErrorNote>{error || result.error}</ErrorNote>}
       <div className="paste-footer">
         <div aria-live="polite">

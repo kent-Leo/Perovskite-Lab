@@ -20,6 +20,7 @@ export type WorksheetColumn = {
   type?: 'text' | 'number' | 'checkbox' | 'select' | 'color';
   options?: { value: string; label: string }[];
   readOnly?: boolean;
+  defaultChecked?: boolean;
 };
 
 export function columnLetter(index: number): string {

@@ -41,6 +41,10 @@ type Props = {
   rows: string[][];
   onChange?: (rows: string[][], change: WorksheetChange) => void;
   onPaste?: (text: string, at: CellAddress) => void;
+  preparePaste?: (text: string, at: CellAddress) => { rows: string[][]; selection: CellSelection };
+  allowAddRows?: boolean;
+  rowLimit?: number;
+  onMoveRow?: (from: number, to: number) => void;
   onMetadataChange?: (column: number, field: 'title' | 'unit' | 'comment', value: string) => void;
   onAddColumn?: () => void;
   cellLabel?: (row: number, column: number) => string;
@@ -58,6 +62,10 @@ export function Worksheet({
   rows,
   onChange,
   onPaste,
+  preparePaste,
+  allowAddRows = true,
+  rowLimit,
+  onMoveRow,
   onMetadataChange,
   onAddColumn,
   cellLabel,
@@ -67,6 +75,7 @@ export function Worksheet({
 }: Props) {
   const root = useRef<HTMLDivElement>(null),
     dragging = useRef(false),
+    rowDragging = useRef<number | null>(null),
     navigating = useRef(false),
     pendingFocus = useRef<CellAddress | null>(null);
   const [selection, setSelection] = useState<CellSelection>({
@@ -127,6 +136,17 @@ export function Worksheet({
   const syncHistory = () =>
     setHistoryCounts({ past: history.current.past.length, future: history.current.future.length });
   function commit(next: string[][], kind: WorksheetChange['kind'], range = selection) {
+    if (rowLimit !== undefined && trimWorksheetRows(next, columns).length > rowLimit)
+      throw new Error('请通过导入样品添加光谱，样品表不能新增没有光谱数据的行');
+    const editable =
+      rowLimit === undefined ? trimWorksheetRows(next, columns) : next.slice(0, rowLimit);
+    next = editable.map((row) =>
+      row.map((value, c) =>
+        columns[c]?.type === 'checkbox'
+          ? value || (columns[c].defaultChecked ? 'true' : 'false')
+          : value,
+      ),
+    );
     if (!onChange || fingerprintOf(next) === fingerprint) return;
     history.current.past.push(rows.map((row) => [...row]));
     const limit = Math.max(
@@ -194,7 +214,9 @@ export function Worksheet({
         return;
       }
       if (!onChange) throw new Error('此工作表为只读结果');
-      const result = pasteWorksheetRange(data, columns, at, text);
+      const result = preparePaste
+        ? preparePaste(text, at)
+        : pasteWorksheetRange(data, columns, at, text);
       commit(result.rows, 'paste', result.selection);
       setSelection(result.selection);
       setEditing(false);
@@ -357,22 +379,24 @@ export function Worksheet({
               <ClipboardPaste size={14} />
               粘贴
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (
-                  height + 10 > WORKSHEET_LIMITS.rows ||
-                  (height + 10) * columns.length > WORKSHEET_LIMITS.cells
-                ) {
-                  setMessage('工作表已达到行数上限');
-                  return;
-                }
-                setCapacity(height + 10);
-                setPage(Math.floor(height / PAGE_SIZE));
-              }}
-            >
-              <Plus size={14} />行
-            </button>
+            {allowAddRows && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (
+                    height + 10 > WORKSHEET_LIMITS.rows ||
+                    (height + 10) * columns.length > WORKSHEET_LIMITS.cells
+                  ) {
+                    setMessage('工作表已达到行数上限');
+                    return;
+                  }
+                  setCapacity(height + 10);
+                  setPage(Math.floor(height / PAGE_SIZE));
+                }}
+              >
+                <Plus size={14} />行
+              </button>
+            )}
           </>
         )}
         {onAddColumn && (
@@ -457,11 +481,34 @@ export function Worksheet({
             {data.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((values, offset) => {
               const r = page * PAGE_SIZE + offset;
               return (
-                <tr key={r} aria-rowindex={r + 5}>
+                <tr
+                  key={r}
+                  aria-rowindex={r + 5}
+                  onDragOver={(e) => {
+                    if (onMoveRow && r < rows.length) e.preventDefault();
+                  }}
+                  onDrop={(e) => {
+                    if (onMoveRow && rowDragging.current !== null && r < rows.length) {
+                      e.preventDefault();
+                      onMoveRow(rowDragging.current, r);
+                    }
+                    rowDragging.current = null;
+                  }}
+                >
                   <th scope="row">
                     <button
                       type="button"
                       aria-label={`选择第 ${r + 1} 行`}
+                      draggable={!!onMoveRow && r < rows.length}
+                      title={onMoveRow ? '拖动行号调整顺序' : undefined}
+                      onDragStart={(e) => {
+                        rowDragging.current = r;
+                        e.dataTransfer.setData('text/plain', String(r + 1));
+                        e.dataTransfer.effectAllowed = 'move';
+                      }}
+                      onDragEnd={() => {
+                        rowDragging.current = null;
+                      }}
                       onClick={() => {
                         setSelection({
                           anchor: { row: r, column: 0 },
