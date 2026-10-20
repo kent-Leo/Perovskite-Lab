@@ -139,7 +139,7 @@ test('two-column object CSV maps automatically and provides a downloadable forma
   const download = page.waitForEvent('download');
   await dialog.getByRole('button', { name: '下载当前布局 CSV 模板' }).click();
   expect((await download).suggestedFilename()).toMatch(
-    /对象筛选模板-v0\.3\.2-\d{4}\.\d{1,2}\.\d{1,2}\.csv/,
+    /对象筛选模板-v0\.3\.1-\d{4}\.\d{1,2}\.\d{1,2}\.csv/,
   );
   await dialog.getByRole('button', { name: '确认导入', exact: true }).click();
   await expect(page.getByLabel('对象名称 2', { exact: true })).toHaveValue('Cd2+');
@@ -247,7 +247,7 @@ test('calibration range, negative slope LOD, units and invalid inputs', async ({
   await expect(page.locator('.lod-results')).toContainText('0.062');
   await page.getByLabel('拟合上限', { exact: true }).fill('2');
   await expect(page.getByTestId('calibration-chart').locator('circle')).toHaveCount(3);
-  await page.getByLabel('浓度单位', { exact: true }).selectOption('nmol/L');
+  await page.getByLabel('浓度单位', { exact: true }).selectOption('nM');
   await expect(page.getByLabel('校准浓度 2', { exact: true })).toHaveValue('1000');
   await expect(page.getByLabel('拟合上限', { exact: true })).toHaveValue('2000');
   await page.screenshot({ path: info.outputPath('calibration-2026.10.1.png'), fullPage: true });
