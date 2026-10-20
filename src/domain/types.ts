@@ -121,7 +121,7 @@ export const defaultStyle = (kind: 'spectra' | 'screening' | 'calibration'): Cha
       ? 'Wavelength / nm'
       : kind === 'screening'
         ? 'Analysis object'
-        : 'Concentration / μM',
+        : 'Concentration / µmol/L',
   yLabel:
     kind === 'calibration'
       ? '(F₀−F)/F₀'
