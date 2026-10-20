@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { useWorkspace } from '../state/workspace';
-import { concentrationGradient, units, normalizeConcentrationUnit } from '../domain/math';
+import { gradient, units } from '../domain/math';
 interface BrowserTool {
   name: string;
   title: string;
@@ -73,7 +73,6 @@ export function useLabTools() {
             maxItems: 1000,
           },
           unit: { type: 'string', enum: units },
-          targetUnit: { type: 'string', enum: units },
         },
         required: ['stock', 'volumeML', 'fixedML', 'targets', 'unit'],
         additionalProperties: false,
@@ -84,41 +83,31 @@ export function useLabTools() {
         const p = input as Record<string, unknown>;
         if (
           Object.keys(p).some(
-            (k) => !['stock', 'volumeML', 'fixedML', 'targets', 'unit', 'targetUnit'].includes(k),
+            (k) => !['stock', 'volumeML', 'fixedML', 'targets', 'unit'].includes(k),
           ) ||
           typeof p.stock !== 'number' ||
           typeof p.volumeML !== 'number' ||
           typeof p.fixedML !== 'number' ||
           typeof p.unit !== 'string' ||
-          !units.includes(normalizeConcentrationUnit(p.unit)) ||
-          (p.targetUnit !== undefined && (typeof p.targetUnit !== 'string' || !units.includes(normalizeConcentrationUnit(p.targetUnit)))) ||
+          !units.includes(p.unit) ||
           !Array.isArray(p.targets) ||
           p.targets.length > 1000 ||
           p.targets.some((v) => typeof v !== 'number')
         )
           throw new Error('Invalid gradient input');
-        const unit = normalizeConcentrationUnit(p.unit);
-        const targetUnit = normalizeConcentrationUnit((p.targetUnit as string | undefined) ?? p.unit);
-        const plan = concentrationGradient(p.stock, unit, p.volumeML, p.targets as number[], targetUnit, p.fixedML);
+        const plan = gradient(p.stock, p.volumeML, p.targets as number[], p.fixedML);
         flushSync(() =>
-          update((prev) => ({
-            sheetMetadata: {
-              ...prev.sheetMetadata,
-              gradient: { ...prev.sheetMetadata?.gradient, target: {
-                ...prev.sheetMetadata?.gradient?.target, unit: targetUnit,
-              } },
-            },
+          update({
             gradient: {
               stock: String(p.stock),
               volume: String(p.volumeML),
               fixed: String(p.fixedML),
               targets: p.targets!.toString(),
-              unit,
-              targetUnit,
+              unit: p.unit as string,
             },
-          })),
+          }),
         );
-        return { groups: plan.length, unit: targetUnit, stockUnit: unit, plan };
+        return { groups: plan.length, unit: latest.current.gradient.unit, plan };
       },
     });
     return () => lifecycle.abort();
