@@ -1,10 +1,7 @@
 import { useMemo } from 'react';
 import { Download, Plus } from 'lucide-react';
 import { useWorkspace } from '../state/workspace';
-import {
-  concentrationGradient, convertConcentrationText, convertConcentration,
-  numeric, fmt, units, normalizeConcentrationUnit,
-} from '../domain/math';
+import { gradient, numeric, fmt, units } from '../domain/math';
 import { WorkspaceWorksheet as Worksheet } from '../components/WorkspaceWorksheet-v0.3.1-2026.10.19';
 import type { WorksheetColumn } from '../domain/worksheet-v0.2.0-2026.10.19';
 import { exportExcel } from '../services/download';
@@ -13,26 +10,6 @@ export function Gradient() {
   const { w, update, notify } = useWorkspace(),
     g = w.gradient;
   const set = (p: Partial<typeof g>) => update({ gradient: { ...g, ...p } });
-  const stockUnit = normalizeConcentrationUnit(g.unit);
-  const targetUnit = normalizeConcentrationUnit(g.targetUnit ?? g.unit);
-  function changeUnit(kind: 'stock' | 'target', unit: string) {
-    try {
-      const patch = kind === 'stock'
-        ? { stock: convertConcentrationText(g.stock, stockUnit, unit), unit }
-        : { targets: convertConcentrationText(g.targets, targetUnit, unit), targetUnit: unit };
-      update({
-        gradient: { ...g, targetUnit, ...patch },
-        ...(kind === 'target' ? { sheetMetadata: {
-          ...w.sheetMetadata,
-          gradient: { ...w.sheetMetadata?.gradient, target: {
-            ...w.sheetMetadata?.gradient?.target, unit,
-          } },
-        } } : {}),
-      });
-    } catch (e) {
-      notify((e as Error).message);
-    }
-  }
   // Keep blank and invalid cells in the editable input; do not filter/reindex draft rows.
   const targets = /[,，;；\t ]/.test(g.targets)
     ? g.targets
@@ -43,12 +20,10 @@ export function Gradient() {
   const result = useMemo(() => {
     try {
       return {
-        rows: concentrationGradient(
+        rows: gradient(
           numeric(g.stock) ?? NaN,
-          stockUnit,
           numeric(g.volume) ?? NaN,
           targets.map((value) => numeric(value) ?? NaN),
-          targetUnit,
           numeric(g.fixed) ?? NaN,
         ),
         error: '',
@@ -56,11 +31,7 @@ export function Gradient() {
     } catch (e) {
       return { rows: [], error: (e as Error).message };
     }
-  }, [g, stockUnit, targetUnit]);
-  let stockInTargetUnit = NaN;
-  try {
-    stockInTargetUnit = convertConcentration(numeric(g.stock) ?? NaN, stockUnit, targetUnit);
-  } catch { /* Calculation errors are shown above the worksheet. */ }
+  }, [g]);
   return (
     <>
       <div className="gradient-layout">
@@ -74,8 +45,8 @@ export function Gradient() {
               onChange={(e) => set({ stock: e.target.value })}
             />
           </Field>
-          <Field label="母液浓度单位">
-            <select value={stockUnit} onChange={(e) => changeUnit('stock', e.target.value)}>
+          <Field label="母液与目标浓度单位">
+            <select value={g.unit} onChange={(e) => set({ unit: e.target.value })}>
               {units.map((u) => (
                 <option key={u}>{u}</option>
               ))}
@@ -99,11 +70,6 @@ export function Gradient() {
               />
             </Field>
           </div>
-          <Field label="配制后溶液浓度单位" hint="切换单位会自动换算目标浓度，配液体积保持不变。">
-            <select value={targetUnit} onChange={(e) => changeUnit('target', e.target.value)}>
-              {units.map((u) => <option key={u}>{u}</option>)}
-            </select>
-          </Field>
           <Field label="目标浓度" hint="按输入顺序生成；用逗号、空格或换行分隔。">
             <textarea
               rows={6}
@@ -118,7 +84,7 @@ export function Gradient() {
         <section className="panel gradient-results">
           <SectionHead
             title="梯度配液表"
-            detail={`C₁V₁ = C₂V₂ · 母液 ${g.stock} ${stockUnit} → 目标 ${targetUnit}`}
+            detail="C₁V₁ = C₂V₂"
             action={
               <button
                 className="primary small-button"
@@ -128,9 +94,7 @@ export function Gradient() {
                     result.rows.map((r) => ({
                       组别: `C${r.index - 1}`,
                       目标浓度: r.concentration,
-                      浓度单位: targetUnit,
-                      母液浓度: numeric(g.stock),
-                      母液浓度单位: stockUnit,
+                      浓度单位: g.unit,
                       母液体积_μL: r.stockUL,
                       固定添加_mL: r.fixedML,
                       预计补加溶剂_mL: r.solventML,
@@ -171,7 +135,7 @@ export function Gradient() {
                     key: 'target',
                     title: '目标浓度',
                     designation: 'X',
-                    unit: targetUnit,
+                    unit: g.unit,
                     type: 'number',
                   },
                   { key: 'group', title: '组别', designation: 'Label', readOnly: true },
@@ -207,7 +171,7 @@ export function Gradient() {
               invalidCell={(i, c) =>
                 c === 0 &&
                 ((numeric(targets[i]) ?? -1) < 0 ||
-                  (numeric(targets[i]) ?? 0) > stockInTargetUnit)
+                  (numeric(targets[i]) ?? 0) > (numeric(g.stock) ?? 0))
               }
               renderCell={(i, c) =>
                 c === 6 && i < targets.length ? (
