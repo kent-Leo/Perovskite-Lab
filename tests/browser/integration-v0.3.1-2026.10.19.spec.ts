@@ -18,8 +18,8 @@ test.beforeEach(async ({ page }) => {
 test('all four pages use worksheets and the application displays its version', async ({
   page,
 }, info) => {
-  await expect(page.locator('.sidebar')).toContainText('v0.3.2');
-  await expect(page.locator('.version-label')).toHaveText('PEROVSKITE LAB / v0.3.2');
+  await expect(page.locator('.sidebar')).toContainText('v0.3.1');
+  await expect(page.locator('.version-label')).toHaveText('PEROVSKITE LAB / v0.3.1');
   for (const [name, count] of [
     ['光谱工作台', 2],
     ['对象筛选', 1],
@@ -32,7 +32,7 @@ test('all four pages use worksheets and the application displays its version', a
     await expect(page.getByRole('grid').first()).toContainText('单位');
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({
-      path: info.outputPath(`${name}-v0.3.2-2026.10.19.png`),
+      path: info.outputPath(`${name}-v0.3.1-2026.10.19.png`),
       fullPage: true,
       animations: 'disabled',
     });
@@ -40,7 +40,7 @@ test('all four pages use worksheets and the application displays its version', a
       .locator('.worksheet')
       .first()
       .screenshot({
-        path: info.outputPath(`${name}-工作表-v0.3.2-2026.10.19.png`),
+        path: info.outputPath(`${name}-工作表-v0.3.1-2026.10.19.png`),
         animations: 'disabled',
       });
   }
@@ -79,7 +79,7 @@ test('screening recalculates responses, protects results and preserves ordering 
   const sheet = page.getByLabel('对象筛选 分析对象 工作表', { exact: true });
   await paste(
     page.getByLabel('对象名称 1', { exact: true }),
-    'Blank\t空白\t0\tµmol/L\t100\t参考\n实际水样\t目标物\t1\tµmol/L\t25\t河水',
+    'Blank\t空白\t0\tμM\t100\t参考\n实际水样\t目标物\t1\tμM\t25\t河水',
   );
   await expect(page.getByLabel('对象响应 2', { exact: true })).toHaveText('0.25');
   await expect(page.getByTestId('screening-chart')).toContainText('实际水样');
@@ -146,8 +146,8 @@ test('gradient stays editable on errors, recalculates, undoes changes and export
   const downloaded = page.waitForEvent('download');
   await page.getByRole('button', { name: '导出 Excel', exact: true }).click();
   const file = await downloaded;
-  expect(file.suggestedFilename()).toMatch(/-v0\.3\.2-\d{4}\.\d{1,2}\.\d{1,2}\.xlsx$/);
-  const path = info.outputPath('梯度-v0.3.2-2026.10.19.xlsx');
+  expect(file.suggestedFilename()).toMatch(/-v0\.3\.1-\d{4}\.\d{1,2}\.\d{1,2}\.xlsx$/);
+  const path = info.outputPath('梯度-v0.3.1-2026.10.19.xlsx');
   await file.saveAs(path);
   const records = XLSX.utils.sheet_to_json<Record<string, unknown>>(
     XLSX.read(await readFile(path)).Sheets.Data,
