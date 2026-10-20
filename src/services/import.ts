@@ -1,5 +1,5 @@
 import Papa from 'papaparse';
-import { numeric, convertConcentration, normalizeConcentrationUnit } from '../domain/math';
+import { numeric, convertConcentration } from '../domain/math';
 import type { Workspace } from '../state/workspace';
 import {
   uid,
@@ -280,7 +280,7 @@ export function mappedImport(file: ImportFile, sheet: number, m: Mapping) {
         name,
         role: 'other',
         concentration: '',
-        unit: normalizeConcentrationUnit(m.unit),
+        unit: m.unit,
         color: palette[spectra.length % palette.length],
         visible: true,
         points,
@@ -323,7 +323,7 @@ export function mappedImport(file: ImportFile, sheet: number, m: Mapping) {
           name,
           role: 'other',
           concentration: c === null ? '' : String(c),
-          unit: normalizeConcentrationUnit(m.unit),
+          unit: m.unit,
           intensity: String(f),
           notes: '',
         });
@@ -350,9 +350,7 @@ export function mergeImport(
   unit: string,
 ): Partial<Workspace> {
   const oldCalibration = prev.demo ? [] : prev.calibration;
-  const calUnit = normalizeConcentrationUnit(
-    r.calibration.length && !oldCalibration.length ? unit : prev.calUnit,
-  );
+  const calUnit = r.calibration.length && !oldCalibration.length ? unit : prev.calUnit;
   const importedCalibration = r.calibration.map((row) => ({
     ...row,
     concentration: String(convertConcentration(Number(row.concentration), unit, calUnit)),
