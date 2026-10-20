@@ -118,7 +118,7 @@ export function Screening({ onImport }: { onImport: () => void }) {
                         name: `对象 ${w.objects.length + 1}`,
                         role: 'other',
                         concentration: '',
-                        unit: 'µmol/L',
+                        unit: 'μM',
                         intensity: '',
                         notes: '',
                       },
