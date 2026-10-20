@@ -99,45 +99,21 @@ export function spectrumStats(points: Point[]) {
     area,
   };
 }
-export const units = ['mol/L', 'mmol/L', 'µmol/L', 'nmol/L', 'mg/L', 'µg/L'];
-const unitAliases: Record<string, string> = {
-  M: 'mol/L', mM: 'mmol/L', μM: 'µmol/L', µM: 'µmol/L', uM: 'µmol/L',
-  'μmol/L': 'µmol/L', 'umol/L': 'µmol/L', nM: 'nmol/L',
-  'μg/L': 'µg/L', 'ug/L': 'µg/L',
-};
-export function normalizeConcentrationUnit(unit: string): string {
-  return Object.hasOwn(unitAliases, unit) ? unitAliases[unit] : unit;
-}
+export const units = ['mol/L', 'mmol/L', 'μM', 'nM', 'mg/L', 'μg/L'];
 const unitFactors: Record<string, number> = {
-  'mol/L': 1, 'mmol/L': 1e-3, 'µmol/L': 1e-6, 'nmol/L': 1e-9,
-  'mg/L': 1, 'µg/L': 1e-3,
+  'mol/L': 1,
+  'mmol/L': 1e-3,
+  μM: 1e-6,
+  nM: 1e-9,
+  'mg/L': 1,
+  'μg/L': 1e-3,
 };
 export function convertConcentration(value: number, from: string, to: string) {
-  from = normalizeConcentrationUnit(from);
-  to = normalizeConcentrationUnit(to);
   if (!Object.hasOwn(unitFactors, from) || !Object.hasOwn(unitFactors, to))
     throw new Error('不支持此浓度单位');
   if (from.includes('g/L') !== to.includes('g/L'))
     throw new Error('质量与摩尔浓度不能直接混用，请先换算');
-  const converted = Number(((value * unitFactors[from]) / unitFactors[to]).toPrecision(15));
-  if (!Number.isFinite(value) || !Number.isFinite(converted))
-    throw new Error('浓度必须为有限数值');
-  return converted;
-}
-// Preserve separators, blank worksheet rows and invalid drafts while converting valid cells.
-export function convertConcentrationText(text: string, from: string, to: string) {
-  convertConcentration(0, from, to);
-  return text.replace(/[^\s,，;；]+/g, (token) => {
-    const value = numeric(token);
-    return value === null ? token : String(convertConcentration(value, from, to));
-  });
-}
-export function concentrationGradient(
-  stock: number, stockUnit: string, volume: number,
-  targets: number[], targetUnit: string, fixedVolume = 0,
-) {
-  const convertedStock = convertConcentration(stock, stockUnit, targetUnit);
-  return gradient(convertedStock, volume, targets, fixedVolume);
+  return Number(((value * unitFactors[from]) / unitFactors[to]).toPrecision(15));
 }
 export function gradient(stock: number, volume: number, targets: number[], fixedVolume = 0) {
   if (
