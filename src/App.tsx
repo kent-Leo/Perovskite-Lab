@@ -1,4 +1,4 @@
-import { APP_VERSION } from './version-v0.3.2-2026.10.20';
+import { APP_VERSION } from './version-v0.3.1-2026.10.19';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity,
