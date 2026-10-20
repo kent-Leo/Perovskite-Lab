@@ -1,4 +1,3 @@
-import { normalizeConcentrationUnit } from '../domain/math';
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import {
   defaultStyle,
@@ -32,7 +31,7 @@ export interface Workspace {
   lodFactor: 3 | 3.3;
   fitMin: string;
   fitMax: string;
-  gradient: { stock: string; volume: string; fixed: string; targets: string; unit: string; targetUnit?: string };
+  gradient: { stock: string; volume: string; fixed: string; targets: string; unit: string };
 }
 export function demoWorkspace(): Workspace {
   const names = ['Blank', 'Sample A', 'Sample B', 'Sample C', 'Sample D', 'Sample E'];
@@ -42,7 +41,7 @@ export function demoWorkspace(): Workspace {
     name,
     role: i === 0 ? 'blank' : 'target',
     concentration: String(concentrations[i]),
-    unit: 'µmol/L',
+    unit: 'μM',
     color: palette[i],
     visible: true,
     source: '人工生成示例',
@@ -68,7 +67,7 @@ export function demoWorkspace(): Workspace {
     name,
     role: i === 0 ? 'blank' : i === 4 ? 'target' : 'interferent',
     concentration: i === 0 ? '0' : '10',
-    unit: 'µmol/L',
+    unit: 'μM',
     intensity: String([12000, 11750, 11350, 11000, 2800, 10850][i]),
     notes: '',
   }));
@@ -91,7 +90,7 @@ export function demoWorkspace(): Workspace {
     blankId: objects[0].id,
     screenMode: 'ratio',
     calMode: 'quench',
-    calUnit: 'µmol/L',
+    calUnit: 'μM',
     calF0: '12000',
     blankRepeats: '11980, 12020, 11990, 12010, 12000',
     manualSigma: '',
@@ -104,39 +103,8 @@ export function demoWorkspace(): Workspace {
       volume: '10',
       fixed: '0',
       targets: '0, 0.1, 0.5, 1, 2, 5, 10',
-      unit: 'µmol/L',
-      targetUnit: 'µmol/L',
+      unit: 'μM',
     },
-  };
-}
-export function normalizeWorkspaceUnits(w: Workspace): Workspace {
-  const normalizeLabel = (label: string) => label.replace(
-    /μmol\/L|\bmmol\/L|[μµu]M\b|\bnM\b|\bmM\b|[μu]g\/L/g,
-    normalizeConcentrationUnit,
-  );
-  return {
-    ...w,
-    spectra: w.spectra.map((s) => ({ ...s, unit: normalizeConcentrationUnit(s.unit) })),
-    objects: w.objects.map((s) => ({ ...s, unit: normalizeConcentrationUnit(s.unit) })),
-    calUnit: normalizeConcentrationUnit(w.calUnit),
-    gradient: {
-      ...w.gradient,
-      unit: normalizeConcentrationUnit(w.gradient.unit),
-      targetUnit: normalizeConcentrationUnit(w.gradient.targetUnit ?? w.gradient.unit),
-    },
-    styles: Object.fromEntries(Object.entries(w.styles).map(([key, style]) => [key, {
-      ...style, xLabel: normalizeLabel(style.xLabel), yLabel: normalizeLabel(style.yLabel),
-      axes: style.axes && Object.fromEntries(Object.entries(style.axes).map(([side, axis]) =>
-        [side, { ...axis, label: axis.label && normalizeLabel(axis.label) }],
-      )),
-    }])) as Workspace['styles'],
-    sheetMetadata: w.sheetMetadata && Object.fromEntries(Object.entries(w.sheetMetadata).map(
-      ([sheet, columns]) => [sheet, Object.fromEntries(Object.entries(columns).map(
-        ([key, metadata]) => [key, { ...metadata, ...(metadata.unit === undefined ? {} : {
-          unit: normalizeConcentrationUnit(metadata.unit),
-        }) }],
-      ))],
-    )),
   };
 }
 const KEY = 'perovskite-lab-workspace-v1';
@@ -153,7 +121,7 @@ function load(): Workspace {
         w.styles &&
         w.gradient
       )
-        return normalizeWorkspaceUnits(w);
+        return w;
     }
   } catch {
     /* recover corrupt storage */
