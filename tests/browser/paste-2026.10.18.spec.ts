@@ -77,7 +77,7 @@ test('headerless single spectrum and invalid corrections preserve the current ch
   await expect(panel.getByLabel('原始数据第 1 行第 1 列', { exact: true })).toHaveValue('');
 });
 
-test('pasting at an offset, pagination and column selection remain usable on mobile', async ({
+test('pasting at an offset, continuous scrolling and column selection remain usable on mobile', async ({
   page,
 }, info) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -89,7 +89,7 @@ test('pasting at an offset, pagination and column selection remain usable on mob
   await expect(panel.getByLabel('粘贴数据起始行', { exact: true })).toHaveValue('2');
   await expect(panel.getByLabel('粘贴数据波长列', { exact: true })).toHaveValue('1');
   await expect(panel).toContainText('可绘制 2 条光谱 · 50 个数据点');
-  await panel.getByRole('button', { name: '下一页', exact: true }).click();
+  await expect(panel.getByRole('button', { name: '下一页', exact: true })).toHaveCount(0);
   await expect(panel.getByLabel('原始数据第 27 行第 2 列', { exact: true })).toHaveValue('524');
   await panel.getByLabel('第 3 列作为强度', { exact: true }).uncheck();
   await expect(panel).toContainText('可绘制 1 条光谱 · 25 个数据点');
@@ -105,7 +105,7 @@ test('pasting at an offset, pagination and column selection remain usable on mob
   await expect(page.getByTestId('spectra-chart').locator('polyline')).toHaveCount(1);
 });
 
-test('manual cell entry, adding columns and redraw preserve previously imported real spectra', async ({
+test('manual cell entry plots only the current raw table and preserves imported sample metadata', async ({
   page,
 }) => {
   await page.getByLabel('选择数据文件').setInputFiles({
@@ -127,9 +127,9 @@ test('manual cell entry, adding columns and redraw preserve previously imported 
   await panel.getByRole('button', { name: '添加强度列', exact: true }).click();
   await expect(panel.getByLabel('原始数据第 1 行第 4 列', { exact: true })).toBeVisible();
   await panel.getByRole('button', { name: '根据表格绘图', exact: true }).click();
-  await expect(page.getByTestId('spectra-chart').locator('polyline')).toHaveCount(2);
+  await expect(page.getByTestId('spectra-chart').locator('polyline')).toHaveCount(1);
   await panel.getByLabel('原始数据第 2 行第 2 列', { exact: true }).fill('3');
   await panel.getByRole('button', { name: '根据表格绘图', exact: true }).click();
-  await expect(page.getByTestId('spectra-chart').locator('polyline')).toHaveCount(2);
+  await expect(page.getByTestId('spectra-chart').locator('polyline')).toHaveCount(1);
   await expect(page.getByLabel('样品名称 1', { exact: true })).toHaveValue('Original');
 });
