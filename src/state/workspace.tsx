@@ -18,6 +18,8 @@ export interface Workspace {
   version: 1;
   demo: boolean;
   spectra: Spectrum[];
+  // Plot points come from the last confirmed raw table/import; sample rows supply metadata.
+  rawSpectra?: Spectrum[];
   objects: ObjectRow[];
   calibration: CalibrationRow[];
   styles: Record<'spectra' | 'screening' | 'calibration', ChartStyle>;
@@ -76,6 +78,7 @@ export function demoWorkspace(): Workspace {
     version: 1,
     demo: true,
     spectra,
+    rawSpectra: spectra,
     objects,
     calibration: concentrations.map((c, i) => ({
       id: uid(),
@@ -127,7 +130,7 @@ export function normalizeWorkspaceUnits(w: Workspace): Workspace {
     styles: Object.fromEntries(Object.entries(w.styles).map(([key, style]) => [key, {
       ...style, xLabel: normalizeLabel(style.xLabel), yLabel: normalizeLabel(style.yLabel),
       axes: style.axes && Object.fromEntries(Object.entries(style.axes).map(([side, axis]) =>
-        [side, { ...axis, label: axis.label && normalizeLabel(axis.label) }],
+        [side, { ...axis, label: normalizeLabel(axis.label ?? '') }],
       )),
     }])) as Workspace['styles'],
     sheetMetadata: w.sheetMetadata && Object.fromEntries(Object.entries(w.sheetMetadata).map(

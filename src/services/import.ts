@@ -360,6 +360,7 @@ export function mergeImport(
   return {
     demo: false,
     spectra: [...(prev.demo ? [] : prev.spectra), ...r.spectra],
+    rawSpectra: [...(prev.demo ? [] : (prev.rawSpectra ?? prev.spectra)), ...r.spectra],
     objects: [...(prev.demo ? [] : prev.objects), ...r.objects],
     calibration: [...oldCalibration, ...importedCalibration],
     calUnit,

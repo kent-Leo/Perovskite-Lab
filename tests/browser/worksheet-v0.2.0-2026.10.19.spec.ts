@@ -71,9 +71,11 @@ test('copies column ranges, clears editable ranges and preserves metadata keyboa
   await expect(page.getByRole('textbox', { name: 'Sheet1 C1', exact: true })).toHaveValue('40');
 });
 
-test('navigates across pages and adds a separately named sample column', async ({ page }) => {
+test('navigates continuously beyond row 20 and adds a separately named sample column', async ({ page }) => {
   await page.getByRole('button', { name: '行', exact: true }).click();
   await page.getByRole('button', { name: '行', exact: true }).click();
+  await expect(page.getByRole('button', { name: '下一页', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('grid').locator('tbody tr')).toHaveCount(26);
   const cell = page.locator('[data-cell="19:3"]');
   await cell.focus();
   await cell.press('Tab');
