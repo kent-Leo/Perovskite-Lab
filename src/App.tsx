@@ -1,4 +1,4 @@
-import { APP_VERSION } from './version-v0.3.2-2026.10.20';
+import { APP_VERSION } from './version-v0.3.4-2026.10.21';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity,
@@ -96,6 +96,7 @@ export default function App() {
       ...demoWorkspace(),
       demo: false,
       spectra: [],
+      rawSpectra: [],
       objects: [],
       calibration: [],
       blankId: '',
