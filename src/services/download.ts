@@ -1,4 +1,4 @@
-import { APP_VERSION } from '../version-v0.3.2-2026.10.20';
+import { APP_VERSION } from '../version-v0.3.4-2026.10.21';
 export function dateStamp() {
   const p = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Shanghai',
