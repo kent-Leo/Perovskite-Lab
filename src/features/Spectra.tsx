@@ -22,8 +22,15 @@ export function Spectra({
     [selected, setSelected] = useState(w.spectra[0]?.id ?? ''),
     [wave, setWave] = useState('516'),
     [error, setError] = useState('');
-  const active = w.spectra.find((s) => s.id === selected) ?? w.spectra[0],
-    shown = single ? (active?.visible ? [active] : []) : w.spectra.filter((s) => s.visible);
+  const rawSpectra = useMemo(() => {
+    const points = new Map((w.rawSpectra ?? w.spectra).map((s) => [s.id, s.points]));
+    return w.spectra.flatMap((sample) => {
+      const raw = points.get(sample.id);
+      return raw ? [{ ...sample, points: raw }] : [];
+    });
+  }, [w.rawSpectra, w.spectra]);
+  const active = rawSpectra.find((s) => s.id === selected) ?? rawSpectra[0],
+    shown = single ? (active?.visible ? [active] : []) : rawSpectra.filter((s) => s.visible);
   const chart = useMemo(() => {
     const invalid = shown.filter((s) => normalize && spectrumStats(s.points)!.max <= 0);
     return {
@@ -54,7 +61,7 @@ export function Spectra({
     try {
       const x = numeric(wave);
       if (x === null) throw new Error('请输入有效的提取波长');
-      const eligible = w.spectra.filter(
+      const eligible = rawSpectra.filter(
         (s) => s.visible && (s.role === 'target' || s.role === 'blank'),
       );
       if (!eligible.length) throw new Error('请先将校准光谱指定为目标物或空白');
@@ -82,7 +89,7 @@ export function Spectra({
     try {
       const x = numeric(wave);
       if (x === null) throw new Error('请输入有效的提取波长');
-      const rows = w.spectra
+      const rows = rawSpectra
         .filter((s) => s.visible)
         .map((s) => {
           const f = interpolate(s.points, x);
@@ -144,20 +151,20 @@ export function Spectra({
         kind="spectra"
         data={{ series: chart.series }}
         title="荧光光谱"
-        subtitle={normalize ? '按各曲线最大值归一化' : '原始强度 · 发射光谱'}
+        subtitle={normalize ? '按各曲线最大值归一化' : '原始光谱数据 · 发射光谱'}
       />
       {chart.error && <ErrorNote>{chart.error}</ErrorNote>}
       <div className="metrics-row">
-        <Metric label="当前样品" value={active?.name ?? '—'} />
+        <Metric label="当前光谱" value={active?.name ?? '—'} />
         <Metric label="峰位 λmax" value={fmt(stats?.peak, 5)} unit="nm" />
         <Metric label="峰值 Fmax" value={fmt(stats?.max, 6)} unit="a.u." />
         <Metric label="半峰宽 FWHM" value={fmt(stats?.fwhm, 4)} unit="nm" />
         <Metric label="原始峰面积" value={fmt(stats?.area, 5)} unit="a.u.·nm" />
       </div>
       <div className="analysis-controls">
-        <Field label="当前查看样品">
+        <Field label="当前查看光谱">
           <select value={active?.id ?? ''} onChange={(e) => setSelected(e.target.value)}>
-            {w.spectra.map((s) => (
+            {rawSpectra.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
               </option>
@@ -168,7 +175,7 @@ export function Spectra({
       <section className="panel">
         <SectionHead
           title="样品与分析对象"
-          detail="名称、角色和浓度均可自定义。通过上方选择样品查看原始峰值。"
+          detail="原始光谱表决定绘图数据；此表设置曲线名称、颜色与显示，角色和浓度用于后续分析。"
           action={
             <button className="small-button" onClick={onImport}>
               <Plus size={16} />
