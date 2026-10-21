@@ -215,7 +215,7 @@ describe('data imports', () => {
     };
     const p = mergeImport(d, r, 'nM');
     expect(p.calibration?.at(-1)?.concentration).toBe('1');
-    expect(p.calUnit).toBe('μM');
+    expect(p.calUnit).toBe('µmol/L');
     expect(() => mergeImport(d, r, 'mg/L')).toThrow();
   });
 });

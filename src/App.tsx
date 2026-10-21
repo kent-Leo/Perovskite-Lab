@@ -1,3 +1,4 @@
+import { APP_VERSION } from './version-v0.3.2-2026.10.20';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity,
@@ -142,7 +143,7 @@ export default function App() {
             <FlaskConical size={19} />
           </span>
           <div>
-            我的实验工作区<small>本地 · MVP 0.1</small>
+            我的实验工作区<small>本地 · v{APP_VERSION}</small>
           </div>
         </div>
         <div className="nav-label">数据分析</div>
@@ -183,7 +184,7 @@ export default function App() {
           </div>
           <strong>数据保留在本机</strong>
           <p>文件在浏览器中处理，工作区自动保存在当前浏览器。</p>
-          <span className="version-label">PEROVSKITE LAB / 0.1</span>
+          <span className="version-label">PEROVSKITE LAB / v{APP_VERSION}</span>
         </div>
       </aside>
       {mobileOpen && (

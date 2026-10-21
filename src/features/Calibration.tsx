@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, Upload, FlaskConical } from 'lucide-react';
 import { useWorkspace } from '../state/workspace';
-import { responses, uid, type CalibrationRow, type ResponseMode } from '../domain/types';
+import { responses, uid, type ResponseMode } from '../domain/types';
 import {
   numeric,
   response,
@@ -15,6 +15,8 @@ import {
 } from '../domain/math';
 import { ChartPanel } from '../components/ChartPanel';
 import { ErrorNote, Field, Metric, SectionHead } from '../components/ui';
+import { WorkspaceWorksheet as Worksheet } from '../components/WorkspaceWorksheet-v0.3.1-2026.10.19';
+import type { WorksheetColumn } from '../domain/worksheet-v0.2.0-2026.10.19';
 import { exportExcel } from '../services/download';
 export function Calibration({ onImport }: { onImport: () => void }) {
   const { w, update, notify } = useWorkspace();
@@ -63,10 +65,6 @@ export function Calibration({ onImport }: { onImport: () => void }) {
       return { lod: null, loq: null, sigma: null, n: 0, error: (e as Error).message };
     }
   }, [result.fit, w.blankRepeats, w.sigmaSource, w.manualSigma, w.calMode, w.calF0, w.lodFactor]);
-  const patch = (id: string, p: Partial<CalibrationRow>) =>
-    update((prev) => ({
-      calibration: prev.calibration.map((r) => (r.id === id ? { ...r, ...p } : r)),
-    }));
   function changeUnit(unit: string) {
     try {
       const convert = (s: string) =>
@@ -226,71 +224,79 @@ export function Calibration({ onImport }: { onImport: () => void }) {
               </div>
             }
           />
-          <div className="table-scroll">
-            <table className="editable-table">
-              <thead>
-                <tr>
-                  <th>拟合</th>
-                  <th>浓度 / {w.calUnit}</th>
-                  <th>强度 F</th>
-                  <th>响应</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {w.calibration.map((r, i) => {
-                  let value: number | null = null;
-                  try {
-                    const f = numeric(r.intensity);
-                    if (f !== null) value = response(f, numeric(w.calF0) ?? NaN, w.calMode);
-                  } catch {
-                    /* invalid response shown as dash */
-                  }
-                  return (
-                    <tr key={r.id}>
-                      <td>
-                        <input
-                          type="checkbox"
-                          aria-label={`拟合点 ${i + 1}`}
-                          checked={r.included}
-                          onChange={(e) => patch(r.id, { included: e.target.checked })}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          min={0}
-                          aria-label={`校准浓度 ${i + 1}`}
-                          value={r.concentration}
-                          onChange={(e) => patch(r.id, { concentration: e.target.value })}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          aria-label={`校准强度 ${i + 1}`}
-                          value={r.intensity}
-                          onChange={(e) => patch(r.id, { intensity: e.target.value })}
-                        />
-                      </td>
-                      <td className="number-cell">{fmt(value, 5)}</td>
-                      <td>
-                        <button
-                          className="icon-button"
-                          aria-label={`删除校准点 ${i + 1}`}
-                          onClick={() =>
-                            update({ calibration: w.calibration.filter((p) => p.id !== r.id) })
-                          }
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <Worksheet
+            sheetId="calibration"
+            book="校准与检出限"
+            sheet={w.sheetNames?.calibration ?? '校准数据'}
+            onRenameSheet={(name) => update((prev) => ({ sheetNames: { ...prev.sheetNames, calibration: name } }))}
+            minRows={Math.max(1, w.calibration.length)}
+            columns={
+              [
+                {
+                  key: 'concentration',
+                  title: '浓度',
+                  designation: 'X',
+                  unit: w.calUnit,
+                  type: 'number',
+                },
+                {
+                  key: 'intensity',
+                  title: '强度 F',
+                  designation: 'Y',
+                  unit: 'a.u.',
+                  type: 'number',
+                },
+                { key: 'included', title: '参与拟合', type: 'checkbox', defaultChecked: true },
+                {
+                  key: 'response',
+                  title: '响应',
+                  designation: 'Result',
+                  comment: responses[w.calMode],
+                  readOnly: true,
+                },
+                { key: 'actions', title: '删除', readOnly: true },
+              ] satisfies WorksheetColumn[]
+            }
+            rows={w.calibration.map((r) => {
+              let value: number | null = null;
+              try {
+                const f = numeric(r.intensity);
+                if (f !== null) value = response(f, numeric(w.calF0) ?? NaN, w.calMode);
+              } catch {
+                /* invalid response stays blank */
+              }
+              return [r.concentration, r.intensity, String(r.included), fmt(value, 8), ''];
+            })}
+            onChange={(rows) =>
+              update({
+                calibration: rows.map((r, i) => ({
+                  id: w.calibration[i]?.id ?? uid(),
+                  concentration: r[0],
+                  intensity: r[1],
+                  included: r[2] === 'true',
+                })),
+              })
+            }
+            cellLabel={(i, c) =>
+              `${['校准浓度', '校准强度', '拟合点', '校准响应', '校准操作'][c]} ${i + 1}`
+            }
+            invalidCell={(i, c) =>
+              c === 0 &&
+              !!w.calibration[i]?.concentration.trim() &&
+              (numeric(w.calibration[i].concentration) ?? -1) < 0
+            }
+            renderCell={(i, c) =>
+              c === 4 && w.calibration[i] ? (
+                <button
+                  className="icon-button"
+                  aria-label={`删除校准点 ${i + 1}`}
+                  onClick={() => update({ calibration: w.calibration.filter((_, j) => j !== i) })}
+                >
+                  <Trash2 size={15} />
+                </button>
+              ) : undefined
+            }
+          />
           <div className="panel-foot">
             <button
               className="text-button"

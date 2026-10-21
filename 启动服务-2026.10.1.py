@@ -20,10 +20,17 @@ def main():
     parser = argparse.ArgumentParser(description="启动 Perovskite Lab 本地网页")
     parser.add_argument("--port", type=int, default=4173)
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument(
+        "--page",
+        choices=["index.html", "worksheet-v0.2.0-2026.10.19.html"],
+        default="index.html",
+    )
     args = parser.parse_args()
     root = Path(__file__).resolve().parent / "dist"
     if not (root / "index.html").is_file():
         raise SystemExit("缺少构建后的网页，请先完成前端 build。")
+    if not (root / args.page).is_file():
+        raise SystemExit("缺少所选页面，请先完成前端 build。")
     try:
         server = LocalServer(
             ("127.0.0.1", args.port), partial(SimpleHTTPRequestHandler, directory=str(root))
@@ -31,6 +38,8 @@ def main():
     except OSError as exc:
         raise SystemExit(f"无法启动端口 {args.port}：{exc}\n可使用 --port 其他端口 再试。")
     url = f"http://127.0.0.1:{args.port}/"
+    if args.page != "index.html":
+        url += args.page
     print(f"Perovskite Lab 已启动：{url}\n使用期间请保留此窗口。结束时按 Ctrl+C。", flush=True)
     if not args.no_browser:
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()

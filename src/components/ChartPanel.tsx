@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Download, SlidersHorizontal, Image, FileCode2, FileText } from 'lucide-react';
 import { chartSVG } from '../domain/chart';
-import type { ChartStyle, PlotData } from '../domain/types';
+import { chartAxes, axisSides, axisNames, type AxisSide, type AxisStyle, type ChartStyle, type PlotData } from '../domain/types';
 import { exportChart } from '../services/export';
 import { useWorkspace } from '../state/workspace';
 import { Empty, ErrorNote, Field } from './ui';
@@ -20,9 +20,22 @@ export function ChartPanel({
     style = w.styles[kind];
   const [settings, setSettings] = useState(true),
     [tab, setTab] = useState('appearance'),
+    [axisSide, setAxisSide] = useState<AxisSide>('bottom'),
     [busy, setBusy] = useState('');
   const set = (p: Partial<ChartStyle>) =>
     update((prev) => ({ styles: { ...prev.styles, [kind]: { ...prev.styles[kind], ...p } } }));
+  const axis = chartAxes(style)[axisSide];
+  const setAxis = (patch: Partial<AxisStyle>) => update((prev) => {
+    const current = prev.styles[kind];
+    const { label, ...settings } = patch;
+    const labels = label === undefined ? {} : axisSide === 'bottom' ? { xLabel: label }
+      : axisSide === 'left' ? { yLabel: label } : {};
+    return { styles: { ...prev.styles, [kind]: { ...current, ...labels,
+      axes: { ...current.axes, [axisSide]: { ...current.axes?.[axisSide],
+        ...settings, ...(label !== undefined && (axisSide === 'top' || axisSide === 'right') ? { label } : {}),
+      } },
+    } } };
+  });
   const chart = useMemo(() => {
     try {
       return { svg: chartSVG(data, style), error: '' };
@@ -228,12 +241,49 @@ export function ChartPanel({
           )}
           {tab === 'axes' && (
             <>
-              <Field label="X 轴名称">
-                <input value={style.xLabel} onChange={(e) => set({ xLabel: e.target.value })} />
-              </Field>
-              <Field label="Y 轴名称">
-                <input value={style.yLabel} onChange={(e) => set({ yLabel: e.target.value })} />
-              </Field>
+              <div className="axis-editor">
+                <div className="axis-side-tabs" role="group" aria-label="选择坐标轴">
+                  {axisSides.map((side) => (
+                    <button key={side} type="button" aria-pressed={axisSide === side}
+                      className={axisSide === side ? 'selected' : ''} onClick={() => setAxisSide(side)}>
+                      {axisNames[side]}
+                    </button>
+                  ))}
+                </div>
+                <label className="check-line">
+                  <input type="checkbox" checked={axis.visible} onChange={(e) => setAxis({ visible: e.target.checked })} />
+                  显示{axisNames[axisSide]}
+                </label>
+                <Field label={`${axisNames[axisSide]}名称`}>
+                  <input value={axis.label} maxLength={120} placeholder="留空隐藏名称" onChange={(e) => setAxis({ label: e.target.value })} />
+                </Field>
+                <label className="check-line">
+                  <input type="checkbox" checked={axis.tickLabels} onChange={(e) => setAxis({ tickLabels: e.target.checked })} />
+                  显示{axisNames[axisSide]}刻度标签
+                </label>
+                <Field label={`${axisNames[axisSide]}刻度线`}>
+                  <select value={axis.ticks} onChange={(e) => setAxis({ ticks: e.target.value as AxisStyle['ticks'] })}>
+                    <option value="out">向外</option><option value="in">向内</option>
+                    <option value="both">内外</option><option value="none">隐藏</option>
+                  </select>
+                </Field>
+                <div className="form-grid">
+                  <Field label={`${axisNames[axisSide]}刻度长度`}>
+                    <input type="number" min={0} max={20} value={axis.tickLength}
+                      onChange={(e) => setAxis({ tickLength: Math.max(0, Math.min(20, Number(e.target.value))) })} />
+                  </Field>
+                  <Field label={`${axisNames[axisSide]}刻度粗细`}>
+                    <input type="number" min={0.5} max={5} step={0.5} value={axis.tickWidth}
+                      onChange={(e) => setAxis({ tickWidth: Math.max(0.5, Math.min(5, Number(e.target.value))) })} />
+                  </Field>
+                </div>
+                <Field label={`${axisNames[axisSide]}刻度分段数`} hint={data.categories && (axisSide === 'top' || axisSide === 'bottom') ? '分类轴按每个对象显示刻度' : '1–20 段，两端均显示刻度'}>
+                  <input type="number" min={1} max={20} step={1} value={axis.divisions}
+                    disabled={!!data.categories && (axisSide === 'top' || axisSide === 'bottom')}
+                    onChange={(e) => setAxis({ divisions: Math.max(1, Math.min(20, Math.round(Number(e.target.value)))) })} />
+                </Field>
+                <p className="muted">上 / 下轴共用 X 范围，左 / 右轴共用 Y 范围。</p>
+              </div>
               <p className="muted">范围留空时自动计算</p>
               <div className="form-grid">
                 {(['xMin', 'xMax', 'yMin', 'yMax'] as const).map((k, i) => (

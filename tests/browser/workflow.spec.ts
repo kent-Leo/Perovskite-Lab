@@ -138,20 +138,20 @@ test('two-column object CSV maps automatically and provides a downloadable forma
   await dialog.getByText('查看 CSV 格式与下载模板', { exact: true }).click();
   const download = page.waitForEvent('download');
   await dialog.getByRole('button', { name: '下载当前布局 CSV 模板' }).click();
-  expect((await download).suggestedFilename()).toMatch(/对象筛选模板-\d{4}\.\d{1,2}\.\d{1,2}\.csv/);
+  expect((await download).suggestedFilename()).toMatch(
+    /对象筛选模板-v0\.3\.2-\d{4}\.\d{1,2}\.\d{1,2}\.csv/,
+  );
   await dialog.getByRole('button', { name: '确认导入', exact: true }).click();
   await expect(page.getByLabel('对象名称 2', { exact: true })).toHaveValue('Cd2+');
   await page.getByLabel('响应方式', { exact: true }).selectOption('F');
   await expect(page.getByTestId('screening-chart')).toContainText('Cd2+');
 });
 test('instrument CSV detects data after notes and blank rows', async ({ page }, info) => {
-  await page
-    .getByLabel('选择数据文件')
-    .setInputFiles({
-      name: '仪器数据-2026.10.1.csv',
-      mimeType: 'text/csv',
-      buffer: Buffer.from('Instrument,metadata\n\n波长;强度\n500;1\n510;2\n520;1\n'),
-    });
+  await page.getByLabel('选择数据文件').setInputFiles({
+    name: '仪器数据-2026.10.1.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from('Instrument,metadata\n\n波长;强度\n500;1\n510;2\n520;1\n'),
+  });
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByLabel('起始行', { exact: true })).toHaveValue('3');
   await expect(dialog).toContainText('可导入 1 条光谱');
@@ -161,13 +161,11 @@ test('instrument CSV detects data after notes and blank rows', async ({ page }, 
   await expect(page.getByTestId('spectra-chart').locator('polyline')).toHaveCount(1);
 });
 test('one-column parsing explains how to fix the separator', async ({ page }) => {
-  await page
-    .getByLabel('选择数据文件')
-    .setInputFiles({
-      name: '分号数据-2026.10.1.csv',
-      mimeType: 'text/csv',
-      buffer: Buffer.from('Wavelength;Intensity\n500;1\n501;2\n'),
-    });
+  await page.getByLabel('选择数据文件').setInputFiles({
+    name: '分号数据-2026.10.1.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from('Wavelength;Intensity\n500;1\n501;2\n'),
+  });
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel('分隔符', { exact: true }).selectOption(',');
   await expect(dialog.getByRole('alert')).toContainText('只识别到 1 列');
@@ -237,7 +235,7 @@ test('custom objects, baseline guards and gradient Excel', async ({ page }, info
   const b = await readFile(info.outputPath('梯度-2026.10.1.xlsx'));
   const sheet = XLSX.read(b).Sheets.Data;
   expect(XLSX.utils.sheet_to_json(sheet)).toHaveLength(7);
-  await page.getByLabel('目标浓度', { exact: false }).last().fill('200');
+  await page.getByLabel('目标浓度', { exact: true }).fill('200');
   await expect(page.getByRole('alert')).toContainText('目标浓度应在');
 });
 test('calibration range, negative slope LOD, units and invalid inputs', async ({ page }, info) => {
@@ -249,7 +247,7 @@ test('calibration range, negative slope LOD, units and invalid inputs', async ({
   await expect(page.locator('.lod-results')).toContainText('0.062');
   await page.getByLabel('拟合上限', { exact: true }).fill('2');
   await expect(page.getByTestId('calibration-chart').locator('circle')).toHaveCount(3);
-  await page.getByLabel('浓度单位', { exact: true }).selectOption('nM');
+  await page.getByLabel('浓度单位', { exact: true }).selectOption('nmol/L');
   await expect(page.getByLabel('校准浓度 2', { exact: true })).toHaveValue('1000');
   await expect(page.getByLabel('拟合上限', { exact: true })).toHaveValue('2000');
   await page.screenshot({ path: info.outputPath('calibration-2026.10.1.png'), fullPage: true });
