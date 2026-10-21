@@ -53,7 +53,6 @@ export type WorksheetProps = {
   renderCell?: (row: number, column: number) => ReactNode | undefined;
   minRows?: number;
 };
-const PAGE_SIZE = 20;
 const firstCell = { row: 0, column: 0 };
 
 export function Worksheet({
@@ -106,8 +105,7 @@ export function Worksheet({
     anchor: firstCell,
     focus: firstCell,
   });
-  const [page, setPage] = useState(0),
-    [capacity, setCapacity] = useState(minRows),
+  const [capacity, setCapacity] = useState(minRows),
     [editing, setEditing] = useState(false),
     [message, setMessage] = useState('');
   const [historyCounts, setHistoryCounts] = useState({ past: 0, future: 0 });
@@ -116,8 +114,7 @@ export function Worksheet({
     future: [],
     expected: null,
   });
-  const height = Math.max(1, rows.length, capacity),
-    maxPage = Math.ceil(height / PAGE_SIZE) - 1;
+  const height = Math.max(1, rows.length, capacity);
   const data = useMemo(
     () => Array.from({ length: height }, (_, r) => columns.map((_, c) => rows[r]?.[c] ?? '')),
     [rows, columns, height],
@@ -155,8 +152,7 @@ export function Worksheet({
       column: Math.max(0, Math.min(c.column, columns.length - 1)),
     });
     setSelection((s) => ({ anchor: clamp(s.anchor), focus: clamp(s.focus) }));
-    setPage((p) => Math.min(p, maxPage));
-  }, [height, columns.length, maxPage]);
+  }, [height, columns.length]);
   const syncHistory = () =>
     setHistoryCounts({ past: history.current.past.length, future: history.current.future.length });
   function commit(next: string[][], kind: WorksheetChange['kind'], range = selection) {
@@ -194,6 +190,7 @@ export function Worksheet({
     to.push(rows.map((row) => [...row]));
     history.current.expected = fingerprintOf(next);
     onChange(next, { kind: redo ? 'redo' : 'undo', selection });
+    setEditing(false);
     syncHistory();
     setMessage('');
   }
@@ -216,7 +213,6 @@ export function Worksheet({
       column: Math.max(0, Math.min(columns.length - 1, at.column)),
     };
     setSelection((s) => ({ anchor: extend ? s.anchor : next, focus: next }));
-    setPage(Math.floor(next.row / PAGE_SIZE));
     setEditing(false);
     pendingFocus.current = next;
   }
@@ -228,7 +224,7 @@ export function Worksheet({
     (cell?.querySelector<HTMLElement>('input, select') ?? cell)?.focus();
     navigating.current = false;
     pendingFocus.current = null;
-  }, [selection, page]);
+  }, [selection]);
 
   function paste(text: string, at = selection.focus) {
     try {
@@ -415,7 +411,10 @@ export function Worksheet({
                     return;
                   }
                   setCapacity(height + 10);
-                  setPage(Math.floor(height / PAGE_SIZE));
+                  const next = { row: height, column: selection.focus.column };
+                  setSelection({ anchor: next, focus: next });
+                  pendingFocus.current = next;
+                  setEditing(false);
                 }}
               >
                 <Plus size={14} />行
@@ -439,7 +438,7 @@ export function Worksheet({
           onChange={(e) => edit(focus, e.target.value)}
         />
       </div>
-      <div className="worksheet-scroll" tabIndex={0} aria-label="工作表数据区域，可横向滚动">
+      <div className="worksheet-scroll" tabIndex={0} aria-label="工作表数据区域，可横向和纵向连续滚动">
         <table
           role="grid"
           aria-label={`${sheet} 数据表`}
@@ -502,8 +501,7 @@ export function Worksheet({
             ))}
           </thead>
           <tbody>
-            {data.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((values, offset) => {
-              const r = page * PAGE_SIZE + offset;
+            {data.map((values, r) => {
               return (
                 <tr
                   key={r}
@@ -683,17 +681,6 @@ export function Worksheet({
         <span>
           {rows.length} 行 × {columns.length} 列
         </span>
-        <div>
-          <button type="button" disabled={!page} onClick={() => setPage((p) => p - 1)}>
-            上一页
-          </button>
-          <span>
-            {page + 1} / {maxPage + 1}
-          </span>
-          <button type="button" disabled={page >= maxPage} onClick={() => setPage((p) => p + 1)}>
-            下一页
-          </button>
-        </div>
       </div>
       <div className="worksheet-status" aria-live="polite">
         <span>

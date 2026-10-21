@@ -48,26 +48,30 @@ export function PasteSpectraTable() {
   }
   function plot() {
     if (!result.value) return;
-    const r = result.value,
-      previousIds = new Set(batch.current.values());
-    const nextBatch = new Map<number, string>();
+    const r = result.value;
+    const nextBatch = new Map(batch.current);
     const spectra = r.spectra.map((s, i) => {
       const col = mapping.ys[i],
         previousId = batch.current.get(col),
         previous = w.spectra.find((old) => old.id === previousId);
       const next = previous
-        ? { ...previous, name: s.name, points: s.points, source: s.source, visible: true }
+        ? { ...previous, points: s.points, source: s.source }
         : s;
       nextBatch.set(col, next.id);
       return next;
     });
-    update((prev) =>
-      mergeImport(
-        { ...prev, spectra: prev.spectra.filter((s) => !previousIds.has(s.id)) },
-        { ...r, spectra },
-        mapping.unit,
-      ),
-    );
+    update((prev) => {
+      const replacements = new Map(spectra.map((s) => [s.id, s]));
+      const existing = new Set(prev.spectra.map((s) => s.id));
+      return {
+        ...mergeImport(prev, { ...r, spectra: [] }, mapping.unit),
+        spectra: prev.demo ? spectra : [
+          ...prev.spectra.map((s) => replacements.get(s.id) ?? s),
+          ...spectra.filter((s) => !existing.has(s.id)),
+        ],
+        rawSpectra: r.spectra.map((s, i) => ({ ...s, id: spectra[i].id })),
+      };
+    });
     batch.current = nextBatch;
     setPlotted(true);
     notify(`已根据表格绘制 ${spectra.length} 条光谱`);
@@ -236,10 +240,10 @@ export function PasteSpectraTable() {
           </strong>
           <p>
             {plotted
-              ? '修改后再次绘图会更新本次粘贴的曲线；清空表格仅清除草稿。'
+              ? '再次绘图仅使用当前表中选中的强度列；名称、颜色与显示沿用样品表设置。'
               : w.demo
                 ? '首次绘图会清除示例工作区，使用你的原始数据。'
-                : '新粘贴的光谱会添加到工作台，已有实验光谱会保留。'}
+                : '绘图仅使用当前表中选中的强度列；已有样品信息保留用于分析。'}
           </p>
         </div>
         <button className="primary" disabled={!result.value || !!error} onClick={plot}>
