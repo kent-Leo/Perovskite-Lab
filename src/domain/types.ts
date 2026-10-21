@@ -72,9 +72,10 @@ export const axisNames: Record<AxisSide, string> = {
 export function chartAxes(style: ChartStyle): Record<AxisSide, AxisStyle> {
   return Object.fromEntries(axisSides.map((side) => [side, {
     visible: side === 'bottom' || side === 'left',
-    label: '', tickLabels: true, ticks: 'out', tickLength: 5, tickWidth: 1.1, divisions: 5,
+    tickLabels: true, ticks: 'out', tickLength: 5, tickWidth: 1.1, divisions: 5,
     ...style.axes?.[side],
-    ...(side === 'bottom' ? { label: style.xLabel } : side === 'left' ? { label: style.yLabel } : {}),
+    // Persisted partial axes may omit their title; blank titles remain valid.
+    label: (side === 'bottom' ? style.xLabel : side === 'left' ? style.yLabel : style.axes?.[side]?.label) ?? '',
   }])) as Record<AxisSide, AxisStyle>;
 }
 export interface ChartStyle {
