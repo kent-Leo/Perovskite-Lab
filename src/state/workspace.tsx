@@ -8,13 +8,16 @@ import {
   type ObjectRow,
   type CalibrationRow,
   type ChartStyle,
+  type ColumnMetadata,
   type ResponseMode,
 } from '../domain/types';
 export type WorksheetId = 'raw' | 'samples' | 'screening' | 'calibration' | 'gradient';
-export type ColumnMetadata = Partial<Record<'title' | 'unit' | 'comment', string>>;
 export interface Workspace {
   sheetMetadata?: Partial<Record<WorksheetId, Record<string, ColumnMetadata>>>;
   sheetNames?: Partial<Record<WorksheetId, string>>;
+  // Raw-table column key (raw-1, raw-2…) to the plotted spectrum id.
+  rawColumnSpectra?: Record<string, string>;
+  excitation?: string;
   version: 1;
   demo: boolean;
   spectra: Spectrum[];
@@ -79,6 +82,8 @@ export function demoWorkspace(): Workspace {
     demo: true,
     spectra,
     rawSpectra: spectra,
+    rawColumnSpectra: {},
+    excitation: '450',
     objects,
     calibration: concentrations.map((c, i) => ({
       id: uid(),
@@ -119,6 +124,8 @@ export function normalizeWorkspaceUnits(w: Workspace): Workspace {
   );
   return {
     ...w,
+    excitation: w.excitation ?? '',
+    rawColumnSpectra: w.rawColumnSpectra ?? {},
     spectra: w.spectra.map((s) => ({ ...s, unit: normalizeConcentrationUnit(s.unit) })),
     objects: w.objects.map((s) => ({ ...s, unit: normalizeConcentrationUnit(s.unit) })),
     calUnit: normalizeConcentrationUnit(w.calUnit),

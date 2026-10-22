@@ -2,6 +2,12 @@ import { useMemo, useRef, useState } from 'react';
 import { ClipboardPaste, Plus, ArrowDownToLine, Trash2 } from 'lucide-react';
 import { useWorkspace } from '../state/workspace';
 import { numeric } from '../domain/math';
+import { palette, type ColumnMetadata } from '../domain/types';
+import {
+  rawColumnIndex,
+  rawColumnKey,
+  rawSpectrumColor,
+} from '../domain/raw-spectra';
 import { mergeImport, type Mapping } from '../services/import';
 import { dateStamp } from '../services/download';
 import {
@@ -26,6 +32,18 @@ export function PasteSpectraTable() {
   const source = `粘贴光谱-${dateStamp()}`;
   const rows = useMemo(() => trimPasteGrid(grid), [grid]);
   const columns = Array.from({ length: grid[0].length }, (_, i) => i);
+  const rawMetadata = w.sheetMetadata?.raw ?? {};
+  const metaAt = (column: number): ColumnMetadata => rawMetadata[rawColumnKey(column)] ?? {};
+  // Stable per-column default so colors do not jump when intensity columns change.
+  const colorAt = (column: number) =>
+    metaAt(column).color?.trim() || palette[column % palette.length];
+  const defaultTitle = (column: number) => {
+    if (column === mapping.x) return '波长';
+    const label = mapping.header
+      ? String(grid[mapping.start - 1]?.[column] ?? '').trim()
+      : '';
+    return label || `光谱 ${column + 1}`;
+  };
   const result = useMemo(() => {
     if (!rows.length) return { value: null, error: '' };
     try {
@@ -34,10 +52,45 @@ export function PasteSpectraTable() {
       return { value: null, error: (e as Error).message };
     }
   }, [rows, mapping, source]);
+  /**
+   * Keep plotted spectra in step with the raw table: the visible curves are the
+   * columns currently marked as intensity columns.
+   */
+  function updateMapping(next: Mapping) {
+    setMapping(next);
+    update((prev) => ({
+      spectra: prev.spectra.map((sample) => {
+        const entry = Object.entries(prev.rawColumnSpectra ?? {}).find(
+          ([, id]) => id === sample.id,
+        );
+        if (!entry) return sample;
+        const column = rawColumnIndex(entry[0]);
+        return column === null ? sample : { ...sample, visible: next.ys.includes(column) };
+      }),
+    }));
+  }
   const patch = (changes: Partial<Mapping>) => {
-    setMapping((m) => ({ ...m, ...changes }));
+    updateMapping({ ...mapping, ...changes });
     setError('');
   };
+  function setColor(column: number, color: string) {
+    update((prev) => {
+      const key = rawColumnKey(column),
+        id = prev.rawColumnSpectra?.[key];
+      return {
+        sheetMetadata: {
+          ...prev.sheetMetadata,
+          raw: {
+            ...prev.sheetMetadata?.raw,
+            [key]: { ...prev.sheetMetadata?.raw?.[key], color },
+          },
+        },
+        spectra: id
+          ? prev.spectra.map((sample) => (sample.id === id ? { ...sample, color } : sample))
+          : prev.spectra,
+      };
+    });
+  }
   function grow(extraRows: number, extraColumns: number) {
     try {
       setGrid(growPasteGrid(grid, grid.length + extraRows, grid[0].length + extraColumns));
@@ -52,24 +105,39 @@ export function PasteSpectraTable() {
     const nextBatch = new Map(batch.current);
     const spectra = r.spectra.map((s, i) => {
       const col = mapping.ys[i],
-        previousId = batch.current.get(col),
+        key = rawColumnKey(col),
+        // Reuse the persisted mapping after a reload so replotting updates rather than duplicates.
+        previousId = batch.current.get(col) ?? w.rawColumnSpectra?.[key],
         previous = w.spectra.find((old) => old.id === previousId);
-      const next = previous
-        ? { ...previous, points: s.points, source: s.source }
-        : s;
+      const next = {
+        ...(previous ?? s),
+        // Store the name visible in the raw table; legend display still prefers 备注/名称.
+        name: defaultTitle(col),
+        color: rawSpectrumColor(rawMetadata[key], colorAt(col)),
+        points: s.points,
+        source: s.source,
+        visible: mapping.ys.includes(col),
+      };
       nextBatch.set(col, next.id);
       return next;
+    });
+    const columnSpectra = { ...(w.rawColumnSpectra ?? {}) };
+    nextBatch.forEach((id, column) => {
+      columnSpectra[rawColumnKey(column)] = id;
     });
     update((prev) => {
       const replacements = new Map(spectra.map((s) => [s.id, s]));
       const existing = new Set(prev.spectra.map((s) => s.id));
       return {
         ...mergeImport(prev, { ...r, spectra: [] }, mapping.unit),
-        spectra: prev.demo ? spectra : [
-          ...prev.spectra.map((s) => replacements.get(s.id) ?? s),
-          ...spectra.filter((s) => !existing.has(s.id)),
-        ],
+        spectra: prev.demo
+          ? spectra
+          : [
+              ...prev.spectra.map((s) => replacements.get(s.id) ?? s),
+              ...spectra.filter((s) => !existing.has(s.id)),
+            ],
         rawSpectra: r.spectra.map((s, i) => ({ ...s, id: spectra[i].id })),
+        rawColumnSpectra: { ...(prev.rawColumnSpectra ?? {}), ...columnSpectra },
       };
     });
     batch.current = nextBatch;
@@ -83,12 +151,11 @@ export function PasteSpectraTable() {
     );
   }
   const worksheetColumns: WorksheetColumn[] = columns.map((col) => ({
-    key: `raw-${col}`,
-    title: col === mapping.x ? '波长' : `强度 ${col}`,
+    key: rawColumnKey(col),
+    title: defaultTitle(col),
     designation: col === mapping.x ? 'X' : mapping.ys.includes(col) ? 'Y' : 'Meta',
     unit: col === mapping.x ? 'nm' : 'a.u.',
     type: 'text',
-    comment: col === mapping.x ? '波长列' : '通过上方复选框选择强度列',
   }));
   return (
     <section className="paste-panel" aria-labelledby="paste-title">
@@ -99,7 +166,7 @@ export function PasteSpectraTable() {
           </h2>
           <p id="paste-hint">
             从 Excel 复制整块数据，点击单元格后按 ⌘V / Ctrl+V；支持制表符、CSV
-            和逐格输入。默认第一列为波长，其余列为强度。
+            和逐格输入。默认第一列为波长，其余列为强度。列的名称、单位、备注和颜色即图例来源。
           </p>
         </div>
         <button
@@ -157,7 +224,7 @@ export function PasteSpectraTable() {
           className="small-button"
           disabled={!rows.length}
           onClick={() => {
-            setMapping(suggestPasteMapping(grid, w.calUnit));
+            updateMapping(suggestPasteMapping(grid, w.calUnit));
             setError('');
           }}
         >
@@ -195,6 +262,20 @@ export function PasteSpectraTable() {
         onRenameSheet={(name) => update((prev) => ({ sheetNames: { ...prev.sheetNames, raw: name } }))}
         columns={worksheetColumns}
         rows={grid}
+        extraHeaderRow={{
+          label: '颜色',
+          render: (col) =>
+            col === mapping.x ? (
+              <span className="muted">—</span>
+            ) : (
+              <input
+                type="color"
+                aria-label={`原始光谱 第 ${col + 1} 列颜色`}
+                value={colorAt(col)}
+                onChange={(e) => setColor(col, e.target.value)}
+              />
+            ),
+        }}
         preparePaste={(text, at) => {
           // Determine the required width first; validate and clear missing trailing cells atomically.
           const expanded = pasteIntoGrid(grid, text, at.row, at.column);
@@ -217,8 +298,9 @@ export function PasteSpectraTable() {
             change.kind === 'paste' &&
             (!rows.length ||
               (change.selection.anchor.row === 0 && change.selection.anchor.column === 0))
-          )
-            setMapping(suggestPasteMapping(next, w.calUnit));
+          ) {
+            updateMapping(suggestPasteMapping(next, w.calUnit));
+          }
           setError('');
         }}
         onAddColumn={() => grow(0, 1)}
@@ -240,10 +322,10 @@ export function PasteSpectraTable() {
           </strong>
           <p>
             {plotted
-              ? '再次绘图仅使用当前表中选中的强度列；名称、颜色与显示沿用样品表设置。'
+              ? '再次绘图仅使用当前表中选中的强度列；名称、备注和颜色沿用表头设置。'
               : w.demo
                 ? '首次绘图会清除示例工作区，使用你的原始数据。'
-                : '绘图仅使用当前表中选中的强度列；已有样品信息保留用于分析。'}
+                : '绘图仅使用当前表中选中的强度列；已有表头信息保留用于图例。'}
           </p>
         </div>
         <button className="primary" disabled={!result.value || !!error} onClick={plot}>

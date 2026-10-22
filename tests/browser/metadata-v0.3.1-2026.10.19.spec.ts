@@ -2,13 +2,12 @@ import { test, expect } from '@playwright/test';
 
 const sheets = [
   { page: 'spectra', name: '原始光谱', id: 'raw', count: 3 },
-  { page: 'spectra', name: '样品信息', id: 'samples', count: 8 },
   { page: 'screening', name: '分析对象', id: 'screening', count: 8 },
   { page: 'calibration', name: '校准数据', id: 'calibration', count: 5 },
   { page: 'gradient', name: '梯度配液', id: 'gradient', count: 7 },
 ] as const;
 
-test('every column supports persistent name, unit and comment edits across all five worksheets', async ({ page }, info) => {
+test('every column supports persistent name, unit and comment edits across all four worksheets', async ({ page }, info) => {
   await page.goto('/');
   await page.waitForTimeout(650);
   const before = await page.evaluate(() => {
@@ -61,7 +60,7 @@ test('metadata edits preserve data undo, computed cells and defaults on newly ad
   await page.getByLabel('原始光谱 第 2 列名称', { exact: true }).fill('测试发射');
   await page.getByRole('button', { name: '添加强度列', exact: true }).click();
   await expect(page.getByLabel('原始光谱 第 2 列名称', { exact: true })).toHaveValue('测试发射');
-  await expect(page.getByLabel('原始光谱 第 4 列名称', { exact: true })).toHaveValue('强度 3');
+  await expect(page.getByLabel('原始光谱 第 4 列名称', { exact: true })).toHaveValue('光谱 4');
   await page.getByLabel('原始光谱 第 2 列名称', { exact: true }).fill('');
   await page.waitForTimeout(650);
   await page.reload();

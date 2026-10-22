@@ -39,6 +39,13 @@ export interface Spectrum {
   points: Point[];
   source: string;
 }
+// Per-column header metadata shared by every worksheet.
+export interface ColumnMetadata {
+  title?: string;
+  unit?: string;
+  comment?: string;
+  color?: string;
+}
 export interface ObjectRow {
   id: string;
   name: string;
@@ -96,7 +103,12 @@ export interface ChartStyle {
   grid: boolean;
   points: boolean;
   dashed: boolean;
-  legend: 'right' | 'bottom' | 'none';
+  legend: 'right' | 'bottom' | 'free' | 'none';
+  // Free legend position as a fraction of the canvas width/height.
+  legendX?: number;
+  legendY?: number;
+  // Independent legend font size; falls back to fontSize when unset.
+  legendFontSize?: number;
   widthCm: number;
   dpi: 300 | 600;
 }
@@ -141,6 +153,8 @@ export const defaultStyle = (kind: 'spectra' | 'screening' | 'calibration'): Cha
   points: false,
   dashed: false,
   legend: kind === 'screening' ? 'none' : 'right',
+  legendX: 0.72,
+  legendY: 0.1,
   widthCm: 16,
   dpi: 300,
 });

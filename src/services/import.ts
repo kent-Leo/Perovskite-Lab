@@ -56,6 +56,17 @@ function detectDelimiter(text: string) {
       if (row.length > 1 && numbers > 0) score += numbers > 1 ? 10 : 1;
       if (row.filter((v) => columnRole(v)).length >= 2) score += 2;
     }
+    // A header such as "Cd²⁺ 10 µM" splits on whitespace while its tab-delimited
+    // data rows do not; prefer the delimiter that keeps numeric rows consistent.
+    const widths = data
+      .filter((row) => row.length > 1 && row.some((value) => numeric(value) !== null))
+      .map((row) => row.length);
+    if (widths.length) {
+      const counts = new Map<number, number>();
+      widths.forEach((width) => counts.set(width, (counts.get(width) ?? 0) + 1));
+      const mode = [...counts].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0];
+      score -= widths.filter((width) => width !== mode).length * 5;
+    }
     return { delimiter, score };
   });
   return candidates.sort((a, b) => b.score - a.score)[0].delimiter;

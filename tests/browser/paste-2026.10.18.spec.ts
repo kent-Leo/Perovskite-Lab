@@ -31,11 +31,14 @@ test('pasted Excel data draws multiple spectra and edits update the same batch',
   await panel.getByRole('button', { name: '根据表格绘图', exact: true }).click();
   await expect(page.getByTestId('spectra-chart').locator('polyline')).toHaveCount(2);
   await expect(page.getByTestId('spectra-chart')).toContainText('Cd²⁺ + 河水');
-  await page.getByLabel('样品角色 2', { exact: true }).selectOption('target');
+  await panel.getByLabel('原始光谱 第 3 列备注', { exact: true }).fill('河水加标 · 2 µM');
+  await expect(page.getByTestId('spectra-chart')).toContainText('河水加标 · 2 µM');
   await panel.getByLabel('原始数据第 3 行第 3 列', { exact: true }).fill('120');
   await panel.getByRole('button', { name: '根据表格绘图', exact: true }).click();
   await expect(page.getByTestId('spectra-chart').locator('polyline')).toHaveCount(2);
-  await expect(page.getByLabel('样品角色 2', { exact: true })).toHaveValue('target');
+  await expect(panel.getByLabel('原始光谱 第 3 列备注', { exact: true })).toHaveValue(
+    '河水加标 · 2 µM',
+  );
   await page.screenshot({
     path: info.outputPath('粘贴绘图预览-2026.10.18.png'),
     fullPage: true,
@@ -48,7 +51,9 @@ test('pasted Excel data draws multiple spectra and edits update the same batch',
   expect(saved.spectra[1].points[1]).toEqual({ x: 510, y: 120 });
   await page.reload();
   await expect(page.getByTestId('spectra-chart').locator('polyline')).toHaveCount(2);
-  await expect(page.getByLabel('样品名称 2', { exact: true })).toHaveValue('Cd²⁺ + 河水');
+  await expect(page.getByLabel('原始光谱 第 3 列备注', { exact: true })).toHaveValue(
+    '河水加标 · 2 µM',
+  );
 });
 
 test('headerless single spectrum and invalid corrections preserve the current chart', async ({
@@ -131,5 +136,9 @@ test('manual cell entry plots only the current raw table and preserves imported 
   await panel.getByLabel('原始数据第 2 行第 2 列', { exact: true }).fill('3');
   await panel.getByRole('button', { name: '根据表格绘图', exact: true }).click();
   await expect(page.getByTestId('spectra-chart').locator('polyline')).toHaveCount(1);
-  await expect(page.getByLabel('样品名称 1', { exact: true })).toHaveValue('Original');
+  await page.waitForTimeout(650);
+  const saved = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('perovskite-lab-workspace-v1') || '{}'),
+  );
+  expect(saved.spectra.map((s: { name: string }) => s.name)).toContain('Original');
 });

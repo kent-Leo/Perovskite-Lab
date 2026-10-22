@@ -19,8 +19,8 @@ test('independent units preserve recipes, synchronize export and survive refresh
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: '导出 Excel', exact: true }).click();
   const file = await download;
-  expect(file.suggestedFilename()).toMatch(/-v0\.3\.4-\d{4}\.\d{1,2}\.\d{1,2}\.xlsx$/);
-  const path = info.outputPath('浓度梯度-v0.3.4-2026.10.20.xlsx');
+  expect(file.suggestedFilename()).toMatch(/-v0\.4\.4-\d{4}\.\d{1,2}\.\d{1,2}\.xlsx$/);
+  const path = info.outputPath('浓度梯度-v0.4.4-2026.10.20.xlsx');
   await file.saveAs(path);
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(XLSX.read(await readFile(path)).Sheets.Data);
   expect(rows[3]).toMatchObject({ 目标浓度: 1000, 浓度单位: 'nmol/L', 母液浓度: 0.1, 母液浓度单位: 'mmol/L', 母液体积_μL: 100 });
@@ -31,7 +31,7 @@ test('independent units preserve recipes, synchronize export and survive refresh
   await targetUnit.selectOption('µmol/L');
   await expect(page.getByLabel('梯度目标浓度 4', { exact: true })).toHaveValue('1');
   await expect(page.getByLabel('梯度母液体积 4', { exact: true })).toHaveText('100');
-  await page.screenshot({ path: info.outputPath('浓度梯度-v0.3.4-2026.10.20.png'), fullPage: true, animations: 'disabled' });
+  await page.screenshot({ path: info.outputPath('浓度梯度-v0.4.4-2026.10.20.png'), fullPage: true, animations: 'disabled' });
 });
 
 test('invalid draft rows stay in place and incompatible units do not mutate data', async ({ page }) => {
@@ -62,5 +62,5 @@ test('legacy storage migrates and the gradient fits a mobile screen', async ({ p
   await expect(page.getByLabel('梯度母液体积 2', { exact: true })).toHaveText('100');
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-  await page.screenshot({ path: info.outputPath('浓度梯度手机-v0.3.4-2026.10.20.png'), fullPage: true, animations: 'disabled' });
+  await page.screenshot({ path: info.outputPath('浓度梯度手机-v0.4.4-2026.10.20.png'), fullPage: true, animations: 'disabled' });
 });

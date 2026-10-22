@@ -59,6 +59,14 @@ describe('data imports', () => {
     expect(m.start).toBe(33);
     expect(mappedImport(file, 0, m).spectra[0].points).toHaveLength(2);
   });
+  it('keeps tab-delimited columns when header labels contain spaces', async () => {
+    const text = '波长\t空白\tCd²⁺ 10 µM\n500\t1\t2\n510\t3\t4';
+    const file = await readDataFile(new File([text], 'paste.tsv'));
+    expect(file.sheets[0].rows[0]).toEqual(['波长', '空白', 'Cd²⁺ 10 µM']);
+    const m = inferMapping(file.sheets[0], 'wide', 'μM');
+    expect(m).toMatchObject({ header: true, x: 0 });
+    expect(mappedImport(file, 0, m).spectra[0].name).toBe('空白');
+  });
   it('supports Excel sep directives and BOM-marked UTF-16 text', async () => {
     const text = 'sep=;\r\nWavelength;Intensity\r\n500;1\r\n501;2';
     const bytes = new Uint8Array(2 + text.length * 2);

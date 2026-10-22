@@ -3,13 +3,13 @@ import { readFile } from 'node:fs/promises';
 import { PDFDocument } from 'pdf-lib';
 
 const pages = [
-  ['光谱工作台', ['原始光谱', '样品信息']], ['对象筛选', ['分析对象']],
+  ['光谱工作台', ['原始光谱']], ['对象筛选', ['分析对象']],
   ['校准与检出限', ['校准数据']], ['浓度梯度', ['梯度配液']],
 ] as const;
 async function navigate(page: Page, name: string) {
   await page.getByRole('link', { name, exact: true }).click();
 }
-test('all five sheet names commit with Enter or blur, survive navigation/reload, and leave data unchanged', async ({ page }, info) => {
+test('all four sheet names commit with Enter or blur, survive navigation/reload, and leave data unchanged', async ({ page }, info) => {
   await page.goto('/');
   const original = await page.evaluate(() => {
     // The initial workspace is saved asynchronously.
@@ -30,14 +30,13 @@ test('all five sheet names commit with Enter or blur, survive navigation/reload,
   await page.waitForTimeout(650);
   await page.reload();
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('perovskite-lab-workspace-v1')!));
-  expect(stored.sheetNames).toEqual({ raw: '实验表 1', samples: '实验表 2', screening: '实验表 3', calibration: '实验表 4', gradient: '实验表 5' });
+  expect(stored.sheetNames).toEqual({ raw: '实验表 1', screening: '实验表 2', calibration: '实验表 3', gradient: '实验表 4' });
   expect(stored.spectra).toHaveLength(6);
   expect(stored.objects).toHaveLength(6);
   expect(stored.calibration).toHaveLength(6);
   await navigate(page, '光谱工作台');
   await expect(page.getByTestId('spectra-chart').locator('polyline')).toHaveCount(original);
   await expect(page.getByRole('button', { name: '重命名标签 实验表 1', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '重命名标签 实验表 2', exact: true })).toBeVisible();
   await page.locator('.worksheet').first().screenshot({ path: info.outputPath('标签改名-v0.3.1-2026.10.19.png') });
 });
 
@@ -116,7 +115,7 @@ test('four axes export to SVG, PNG and PDF with versioned filenames', async ({ p
     const pending = page.waitForEvent('download');
     await page.getByRole('button', { name: format, exact: true }).click();
     const file = await pending;
-    expect(file.suggestedFilename()).toMatch(/-v0\.3\.4-\d{4}\.\d{1,2}\.\d{1,2}\./);
+    expect(file.suggestedFilename()).toMatch(/-v0\.4\.4-\d{4}\.\d{1,2}\.\d{1,2}\./);
     const path = info.outputPath(`四轴-v0.3.1-2026.10.19.${format.toLowerCase()}`);
     await file.saveAs(path);
     const bytes = await readFile(path);
