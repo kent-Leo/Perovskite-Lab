@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://sci.luzen.org/sitemap.xml
