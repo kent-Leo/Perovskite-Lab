@@ -1,8 +1,11 @@
 import type { ChartStyle } from '../domain/types';
 import { downloadBlob, filename } from './download';
 let svgFontData: Promise<string> | undefined;
+// Font family used only to warm the browser font cache before rasterizing a PNG.
+const RASTER_FONT_FAMILY = 'Perovskite Lab Export Sans';
+let rasterFont: Promise<void> | undefined;
 async function portableSVG(svg: string) {
-  if (!/[^\x00-\x7f]/.test(svg) && !svg.includes('font-family="Perovskite Lab Sans')) return svg;
+  if (!/[^\x00-\x7f]/.test(svg) && !svg.includes('font-family="Perovskite Lab Sans')) return { svg };
   svgFontData ??= fetch(`${import.meta.env.BASE_URL}fonts/PerovskiteLabSans-Regular.woff`).then(
     async (r) => {
       if (!r.ok) throw new Error('导出字体读取失败');
@@ -16,11 +19,46 @@ async function portableSVG(svg: string) {
     },
   );
   const font = await svgFontData;
-  return svg.replace(
-    '<defs>',
-    `<defs><style>@font-face{font-family:'Perovskite Lab Sans';src:url('${font}') format('woff')}</style>`,
-  );
+  return {
+    svg: svg.replace(
+      '<defs>',
+      `<defs><style>@font-face{font-family:'Perovskite Lab Sans';src:url('${font}') format('woff')}</style>`,
+    ),
+    font,
+  };
 }
+// Chromium snapshots an SVG loaded through <img> before its data-URI @font-face
+// finishes loading, so the first PNG of a page loses every glyph that needs the
+// embedded font (chart title, Chinese legend labels). Loading the very same font
+// data in the page first makes the image use the cached font on its first paint.
+function warmRasterFont(font: string) {
+  rasterFont ??= (async () => {
+    try {
+      const face = new FontFace(RASTER_FONT_FAMILY, `url('${font}') format('woff')`);
+      await face.load();
+      document.fonts.add(face);
+    } catch {
+      // Keep the extra animation frame below as the fallback for browsers that
+      // cannot preload the export font.
+    }
+  })();
+  return rasterFont;
+}
+// Wait for the raster to settle. requestAnimationFrame stops firing in hidden
+// tabs, so fall back to a timer instead of hanging the export forever.
+const nextPaint = () =>
+  new Promise<void>((resolve) => {
+    let settled = false,
+      timer: ReturnType<typeof setTimeout>;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    };
+    requestAnimationFrame(() => requestAnimationFrame(finish));
+    timer = setTimeout(finish, 250);
+  });
 function crc32(bytes: Uint8Array) {
   let c = 0xffffffff;
   for (const b of bytes) {
@@ -55,7 +93,12 @@ export async function exportChart(
   style: ChartStyle,
   name: string,
 ) {
-  if (format !== 'pdf') svg = await portableSVG(svg);
+  let embeddedFont: string | undefined;
+  if (format !== 'pdf') {
+    const portable = await portableSVG(svg);
+    svg = portable.svg;
+    embeddedFont = portable.font;
+  }
   if (format === 'svg') {
     downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), filename(name, 'svg'));
     return;
@@ -65,6 +108,7 @@ export async function exportChart(
     W = Number(root.getAttribute('width')),
     H = Number(root.getAttribute('height'));
   if (format === 'png') {
+    if (embeddedFont) await warmRasterFont(embeddedFont);
     await document.fonts.ready;
     const img = new Image(),
       url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
@@ -74,6 +118,8 @@ export async function exportChart(
         img.onerror = () => rej(new Error('图像渲染失败'));
         img.src = url;
       });
+      // Give the image one paint to resolve its embedded font before rasterizing.
+      await nextPaint();
       const width = Math.round((style.widthCm / 2.54) * style.dpi),
         height = Math.round((width * H) / W);
       if (width * height > 40_000_000) throw new Error('导出尺寸过大，请减小图宽');
@@ -128,14 +174,20 @@ export async function exportChart(
         pdf.endPath(),
       );
     }
-    if (tag === 'rect')
-      page.drawRectangle({
-        x: num(el, 'x') * scale,
-        y: (H - num(el, 'y') - num(el, 'height')) * scale,
-        width: num(el, 'width') * scale,
-        height: num(el, 'height') * scale,
-        color: color(el.getAttribute('fill')),
-      });
+    if (tag === 'rect') {
+      // Unfilled rects are transparent legend drag hit areas. pdf-lib would leave
+      // their path unpainted, and because q/Q do not reset the current path the
+      // next legend stroke outlines them as colored boxes. Skip them entirely.
+      const fill = color(el.getAttribute('fill'));
+      if (fill)
+        page.drawRectangle({
+          x: num(el, 'x') * scale,
+          y: (H - num(el, 'y') - num(el, 'height')) * scale,
+          width: num(el, 'width') * scale,
+          height: num(el, 'height') * scale,
+          color: fill,
+        });
+    }
     if (tag === 'line' || tag === 'polyline') {
       const pts =
         tag === 'line'
