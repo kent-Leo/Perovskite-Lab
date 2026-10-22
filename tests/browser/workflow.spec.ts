@@ -60,7 +60,6 @@ test('spectra, editing, normalization and three exports', async ({ page }, info)
   await page.screenshot({ path: info.outputPath('desktop-2026.10.1.png'), fullPage: true });
   await page.getByRole('button', { name: '单条光谱', exact: true }).click();
   await expect(page.getByTestId('spectra-chart').locator('polyline')).toHaveCount(1);
-  await page.getByLabel('样品名称 1', { exact: true }).fill('中文空白 Cd²⁺');
   await page.getByLabel('归一化', { exact: true }).check();
   await expect(page.getByTestId('spectra-chart')).toContainText('Normalized intensity');
   await page.getByLabel('图表标题', { exact: true }).fill('荧光光谱验证');
@@ -83,13 +82,11 @@ test('spectra, editing, normalization and three exports', async ({ page }, info)
       const i = bytes.indexOf('pHYs');
       expect(i).toBeGreaterThan(0);
       expect(bytes.readUInt32BE(i + 4)).toBe(Math.round(300 / 0.0254));
-    } else expect(bytes.toString()).toContain('中文空白 Cd²⁺');
+    } else expect(bytes.toString()).toContain('荧光光谱验证');
   }
   expect(errors).toEqual([]);
 });
-test('CSV mapping, invalid row warning, metadata extraction and local persistence', async ({
-  page,
-}) => {
+test('CSV mapping, peak metrics, export and local persistence', async ({ page }, info) => {
   await page.getByLabel('选择数据文件').setInputFiles({
     name: '多光谱-2026.10.1.csv',
     mimeType: 'text/csv',
@@ -102,21 +99,39 @@ test('CSV mapping, invalid row warning, metadata extraction and local persistenc
   await dialog.getByRole('button', { name: '确认导入', exact: true }).click();
   await expect(page.getByTestId('spectra-chart').locator('polyline')).toHaveCount(2);
   await expect(page.locator('.workspace-status')).not.toContainText('示例工作区');
-  await page.getByLabel('样品角色 1', { exact: true }).selectOption('blank');
-  await page.getByLabel('样品浓度 1', { exact: true }).fill('0');
-  await page.getByLabel('样品角色 2', { exact: true }).selectOption('target');
-  await page.getByLabel('样品浓度 2', { exact: true }).fill('1');
-  await page.getByLabel('波长 / nm', { exact: true }).fill('510');
-  await page.getByRole('button', { name: '生成校准数据', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '校准与检出限', exact: true })).toBeVisible();
-  await expect(page.getByLabel('固定参考 F₀')).toHaveValue('200');
-  await expect(page.getByTestId('calibration-chart')).toContainText('0.5x');
-  await expect(page.getByText('两点可确定直线', { exact: false })).toBeVisible();
-  await page.getByLabel('空白原始强度重复值', { exact: false }).fill('198,200,202');
-  await expect(page.locator('.lod-results')).toContainText('0.066');
+
+  await page.getByLabel('激发波长 / nm', { exact: true }).fill('450');
+  const metrics = page.locator('.peak-panel .metric');
+  await expect(metrics.nth(0)).toContainText('510');
+  await expect(metrics.nth(1)).toContainText('200');
+  await expect(metrics.nth(2)).toContainText('20');
+  await expect(metrics.nth(3)).toContainText('60');
+  await expect(metrics.nth(4)).toContainText('3000');
+  await expect(page.locator('.peak-panel')).toContainText('积分区间 500–520 nm');
+
+  const downloaded = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出峰指标', exact: true }).click();
+  const file = await downloaded;
+  const path = info.outputPath('峰特性指标-2026.10.22.xlsx');
+  await file.saveAs(path);
+  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(
+    XLSX.read(await readFile(path)).Sheets.Data,
+  );
+  expect(rows).toHaveLength(2);
+  expect(rows[0]).toMatchObject({
+    光谱: 'Blank',
+    峰位_nm: 510,
+    峰强度_a_u: 200,
+    半高宽_nm: 20,
+    斯托克斯位移_nm: 60,
+    峰面积_a_u_nm: 3000,
+  });
+
   await page.waitForTimeout(650);
   await page.reload();
-  await expect(page.getByLabel('校准强度 2', { exact: true })).toHaveValue('100');
+  await expect(page.getByLabel('激发波长 / nm', { exact: true })).toHaveValue('450');
+  await expect(page.locator('.peak-panel .metric').nth(3)).toContainText('60');
+  await expect(page.getByTestId('spectra-chart').locator('polyline')).toHaveCount(2);
 });
 test('two-column object CSV maps automatically and provides a downloadable format example', async ({
   page,
@@ -139,7 +154,7 @@ test('two-column object CSV maps automatically and provides a downloadable forma
   const download = page.waitForEvent('download');
   await dialog.getByRole('button', { name: '下载当前布局 CSV 模板' }).click();
   expect((await download).suggestedFilename()).toMatch(
-    /对象筛选模板-v0\.3\.4-\d{4}\.\d{1,2}\.\d{1,2}\.csv/,
+    /对象筛选模板-v0\.4\.4-\d{4}\.\d{1,2}\.\d{1,2}\.csv/,
   );
   await dialog.getByRole('button', { name: '确认导入', exact: true }).click();
   await expect(page.getByLabel('对象名称 2', { exact: true })).toHaveValue('Cd2+');
@@ -214,7 +229,7 @@ test('XLSX sheet selection and headerless TXT queue', async ({ page }) => {
   await expect(dialog.getByLabel('起始行包含列名', { exact: true })).not.toBeChecked();
   await dialog.getByRole('button', { name: '确认导入', exact: true }).click();
   await expect(page.getByTestId('spectra-chart').locator('polyline')).toHaveCount(2);
-  await expect(page.getByLabel('样品名称 1', { exact: true })).toHaveValue('Second');
+  await expect(page.getByTestId('spectra-chart')).toContainText('Second');
 });
 test('custom objects, baseline guards and gradient Excel', async ({ page }, info) => {
   await page.getByRole('link', { name: '对象筛选', exact: true }).click();

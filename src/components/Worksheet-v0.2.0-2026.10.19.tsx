@@ -22,6 +22,7 @@ import {
   copyWorksheetRange,
   clearWorksheetRange,
   pasteWorksheetRange,
+  pasteMetadataValues,
   trimWorksheetRows,
   normalizeWorksheetCell,
   type CellAddress,
@@ -51,6 +52,8 @@ export type WorksheetProps = {
   cellLabel?: (row: number, column: number) => string;
   invalidCell?: (row: number, column: number) => boolean;
   renderCell?: (row: number, column: number) => ReactNode | undefined;
+  // Extra editable header row shown below 名称 / 单位 / 备注 (for example colors).
+  extraHeaderRow?: { label: string; render: (column: number) => ReactNode };
   minRows?: number;
 };
 const firstCell = { row: 0, column: 0 };
@@ -72,6 +75,7 @@ export function Worksheet({
   cellLabel,
   invalidCell,
   renderCell,
+  extraHeaderRow,
   minRows = 6,
 }: WorksheetProps) {
   const [renaming, setRenaming] = useState(false),
@@ -226,8 +230,27 @@ export function Worksheet({
     pendingFocus.current = null;
   }, [selection]);
 
-  function paste(text: string, at = selection.focus) {
-    try {
+  function pasteMetadata(
+    e: ClipboardEvent<HTMLInputElement>,
+    column: number,
+    field: 'title' | 'unit' | 'comment',
+  ) {
+    if (!onMetadataChange) return;
+    const values = pasteMetadataValues(e.clipboardData.getData('text/plain'));
+    // A single value keeps the native input behaviour, including partial replacement.
+    if (values.length <= 1) return;
+    e.preventDefault();
+    const room = Math.max(0, columns.length - column),
+      applied = values.slice(0, room);
+    applied.forEach((value, i) => onMetadataChange(column + i, field, value));
+    const label = ['名称', '单位', '备注'][['title', 'unit', 'comment'].indexOf(field)];
+    setMessage(
+      values.length > room
+        ? `已粘贴 ${applied.length} 列${label}，超出表格末列的 ${values.length - room} 个值已忽略`
+        : `已粘贴 ${applied.length} 列${label}`,
+    );
+  }
+  function paste(text: string, at = selection.focus) {    try {
       if (onPaste) {
         onPaste(text, at);
         setMessage('');
@@ -442,7 +465,7 @@ export function Worksheet({
         <table
           role="grid"
           aria-label={`${sheet} 数据表`}
-          aria-rowcount={height + 4}
+          aria-rowcount={height + 4 + (extraHeaderRow ? 1 : 0)}
           aria-colcount={columns.length + 1}
         >
           <thead>
@@ -489,8 +512,11 @@ export function Worksheet({
                     {onMetadataChange ? (
                       <input
                         aria-label={`${sheet} 第 ${c + 1} 列${['名称', '单位', '备注'][i]}`}
+                        title="单击全选；可粘贴一行或多行单列值，按列横向填入"
                         value={col[field] ?? ''}
                         onChange={(e) => onMetadataChange(c, field, e.target.value)}
+                        onFocus={(e) => e.target.select()}
+                        onPaste={(e) => pasteMetadata(e, c, field)}
                       />
                     ) : (
                       <span title={col[field]}>{col[field] || '—'}</span>
@@ -499,6 +525,14 @@ export function Worksheet({
                 ))}
               </tr>
             ))}
+            {extraHeaderRow && (
+              <tr className="worksheet-label-row worksheet-extra-row">
+                <th scope="row">{extraHeaderRow.label}</th>
+                {columns.map((col, c) => (
+                  <td key={col.key}>{extraHeaderRow.render(c)}</td>
+                ))}
+              </tr>
+            )}
           </thead>
           <tbody>
             {data.map((values, r) => {

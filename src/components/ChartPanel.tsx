@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { Download, SlidersHorizontal, Image, FileCode2, FileText } from 'lucide-react';
 import { chartSVG } from '../domain/chart';
 import { chartAxes, axisSides, axisNames, type AxisSide, type AxisStyle, type ChartStyle, type PlotData } from '../domain/types';
@@ -24,6 +24,63 @@ export function ChartPanel({
     [busy, setBusy] = useState('');
   const set = (p: Partial<ChartStyle>) =>
     update((prev) => ({ styles: { ...prev.styles, [kind]: { ...prev.styles[kind], ...p } } }));
+  const legendDrag = useRef<{
+    pointerId: number;
+    offsetX: number;
+    offsetY: number;
+    startX: number;
+    startY: number;
+    moved: boolean;
+  } | null>(null);
+  function startLegendDrag(e: ReactPointerEvent<HTMLDivElement>) {
+    const target = e.target as Element,
+      group = target.closest?.('[data-legend]'),
+      svg = group?.closest('svg');
+    if (!group || !svg) return;
+    const rect = svg.getBoundingClientRect(),
+      x = Number(group.getAttribute('data-legend-x')) || 0,
+      y = Number(group.getAttribute('data-legend-y')) || 0;
+    legendDrag.current = {
+      pointerId: e.pointerId,
+      offsetX: x - (e.clientX - rect.left) / rect.width,
+      offsetY: y - (e.clientY - rect.top) / rect.height,
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  }
+  function moveLegend(e: ReactPointerEvent<HTMLDivElement>) {
+    const drag = legendDrag.current,
+      svg = e.currentTarget.querySelector('svg');
+    if (!drag || drag.pointerId !== e.pointerId || !svg) return;
+    if (!drag.moved) {
+      if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < 3) return;
+      drag.moved = true;
+    }
+    const rect = svg.getBoundingClientRect(),
+      clamp = (value: number) => Math.max(0, Math.min(1, value)),
+      x = clamp((e.clientX - rect.left) / rect.width + drag.offsetX),
+      y = clamp((e.clientY - rect.top) / rect.height + drag.offsetY);
+    set({ legend: 'free', legendX: x, legendY: y });
+    e.preventDefault();
+  }
+  function endLegendDrag(e: ReactPointerEvent<HTMLDivElement>) {
+    const drag = legendDrag.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    legendDrag.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId))
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    if (!drag.moved) return;
+    // Sync the stored position with the clamped position actually drawn.
+    const group = e.currentTarget.querySelector('[data-legend]');
+    if (!group) return;
+    const x = Number(group.getAttribute('data-legend-x')),
+      y = Number(group.getAttribute('data-legend-y'));
+    if (Number.isFinite(x) && Number.isFinite(y))
+      set({ legend: 'free', legendX: x, legendY: y });
+  }
   const axis = chartAxes(style)[axisSide];
   const setAxis = (patch: Partial<AxisStyle>) => update((prev) => {
     const current = prev.styles[kind];
@@ -81,6 +138,11 @@ export function ChartPanel({
             <div
               className="svg-chart"
               data-testid={`${kind}-chart`}
+              onPointerDown={startLegendDrag}
+              onPointerMove={moveLegend}
+              onPointerUp={endLegendDrag}
+              onPointerCancel={endLegendDrag}
+              onLostPointerCapture={endLegendDrag}
               dangerouslySetInnerHTML={{ __html: chart.svg }}
             />
           ) : (
@@ -202,17 +264,77 @@ export function ChartPanel({
                     }
                   />
                 </Field>
-                <Field label="图例">
-                  <select
-                    value={style.legend}
-                    onChange={(e) => set({ legend: e.target.value as ChartStyle['legend'] })}
-                  >
-                    <option value="right">右侧</option>
-                    <option value="bottom">底部</option>
-                    <option value="none">隐藏</option>
-                  </select>
+                <Field label="图例字号">
+                  <input
+                    type="number"
+                    min={8}
+                    max={30}
+                    value={style.legendFontSize ?? style.fontSize}
+                    onChange={(e) =>
+                      set({
+                        legendFontSize: Math.max(8, Math.min(30, Number(e.target.value))),
+                      })
+                    }
+                  />
                 </Field>
               </div>
+              <Field label="图例位置">
+                <select
+                  value={style.legend}
+                  onChange={(e) => set({ legend: e.target.value as ChartStyle['legend'] })}
+                >
+                  <option value="right">右侧</option>
+                  <option value="bottom">底部</option>
+                  <option value="free">自由拖动</option>
+                  <option value="none">隐藏</option>
+                </select>
+              </Field>
+              {style.legend === 'free' && (
+                <>
+                  <div className="form-grid">
+                    <Field label="图例 X / %">
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={Math.round((style.legendX ?? 0.72) * 100)}
+                        onChange={(e) =>
+                          set({
+                            legendX: Math.max(0, Math.min(100, Number(e.target.value))) / 100,
+                          })
+                        }
+                      />
+                    </Field>
+                    <Field label="图例 Y / %">
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={Math.round((style.legendY ?? 0.1) * 100)}
+                        onChange={(e) =>
+                          set({
+                            legendY: Math.max(0, Math.min(100, Number(e.target.value))) / 100,
+                          })
+                        }
+                      />
+                    </Field>
+                  </div>
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() =>
+                      set({
+                        legend: kind === 'screening' ? 'none' : 'right',
+                        legendX: undefined,
+                        legendY: undefined,
+                      })
+                    }
+                  >
+                    重置图例位置
+                  </button>
+                </>
+              )}
+              <p className="muted">图例可直接在图中拖动；位置与字号随 PNG / SVG / PDF 导出。</p>
               <label className="check-line">
                 <input
                   type="checkbox"

@@ -695,6 +695,15 @@ input[type='checkbox'] {
   height: auto;
   min-width: 400px;
 }
+.svg-chart [data-legend] {
+  cursor: move;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.svg-chart [data-legend]:hover {
+  opacity: 0.82;
+}
 .chart-footer {
   display: flex;
   align-items: center;
@@ -1879,3 +1888,57 @@ table,
 .axis-side-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; padding: 3px; background: #f1f5f2; border-radius: 6px; }
 .axis-side-tabs button { padding: 6px 0; font-size: 12px; background: transparent; border: 0; border-radius: 4px; color: #768778; }
 .axis-side-tabs button.selected { background: white; color: #286f57; box-shadow: 0 1px 3px #243b391a; }
+
+/* Peak characteristics analysis (replaces the former extraction panel). */
+.peak-panel {
+  padding: 20px 23px;
+  border: 1px solid #dce5dc;
+  background: #edf3ec;
+  border-radius: 9px;
+  margin-bottom: 20px;
+}
+.peak-panel .section-head {
+  padding: 0 0 4px;
+  align-items: flex-start;
+}
+.peak-panel .section-head h2 {
+  font-size: 0.875rem;
+}
+.peak-panel .section-head p {
+  color: #6d8270;
+  font-size: 0.75rem;
+  line-height: 1.6;
+  margin-top: 6px;
+  max-width: 70ch;
+}
+.peak-controls {
+  display: flex;
+  align-items: flex-start;
+  gap: 15px;
+  flex-wrap: wrap;
+  margin-top: 13px;
+}
+.peak-controls .field {
+  width: 220px;
+}
+.peak-panel .metrics-row {
+  margin: 14px 0 0;
+  background: rgba(255, 255, 255, 0.72);
+}
+.peak-note {
+  color: #6d8270;
+  font-size: 0.75rem;
+  line-height: 1.6;
+  margin-top: 10px;
+}
+@media (max-width: 760px) {
+  .peak-panel {
+    padding: 17px;
+  }
+  .peak-controls .field {
+    width: 100%;
+  }
+  .peak-panel .metrics-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

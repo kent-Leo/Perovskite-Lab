@@ -56,10 +56,15 @@ export function chartSVG(data: PlotData, style: ChartStyle): string {
       : Math.max(0, ...ticksFor(side).map((t) => labelWidth(t.label))) + 10;
     return Math.max(30, outward(side) + tickSpace + (a.label ? fs + 25 : 12));
   };
-  const legendItems = data.series.filter((s) => s.kind !== 'bar');
+  const legendItems = data.series;
+  const legendFontSize = Number.isFinite(style.legendFontSize)
+    ? Math.max(8, Math.min(30, Number(style.legendFontSize)))
+    : fs;
+  const legendRow = Math.max(18, legendFontSize + 10);
   const legendRows = Math.ceil(legendItems.length / 3);
-  const legendWidth = Math.max(0, ...legendItems.map((s) => labelWidth(s.name)));
-  const bottomLegend = style.legend === 'bottom' && legendItems.length > 0;
+  const legendWidth = Math.max(0, ...legendItems.map((s) => labelWidth(s.name, legendFontSize)));
+  const hasLegend = style.legend !== 'none' && legendItems.length > 0;
+  const bottomLegend = style.legend === 'bottom' && hasLegend;
   const bottomAxis = margin('bottom'), topAxis = margin('top'), rightAxis = margin('right');
   // Leave room for long axis titles and rotated category labels in exported figures.
   const verticalTitle = Math.max(...(['left', 'right'] as const).map((side) =>
@@ -70,8 +75,8 @@ export function chartSVG(data: PlotData, style: ChartStyle): string {
   const left = Math.max(margin('left'), axes.bottom.visible && axes.bottom.tickLabels ? edgeLabels : 0),
     top = topAxis + (style.title ? fs + 35 : 10),
     right = Math.max(rightAxis, axes.top.visible && axes.top.tickLabels ? edgeLabels : 0) +
-      (style.legend === 'right' ? Math.max(200, legendWidth + 80) : 0),
-    bottom = bottomAxis + (bottomLegend ? legendRows * 28 + 28 : 10);
+      (style.legend === 'right' && hasLegend ? Math.max(200, legendWidth + 80) : 0),
+    bottom = bottomAxis + (bottomLegend ? legendRows * legendRow + legendRow : 10);
   const horizontalTicks = Math.max(0, ...(['top', 'bottom'] as const).map((side) => {
     const axis = axes[side];
     if (!axis.visible || !axis.tickLabels) return 0;
@@ -81,7 +86,9 @@ export function chartSVG(data: PlotData, style: ChartStyle): string {
   }));
   const W = Math.max(1000, left + right + Math.max(550, horizontalTitle, horizontalTicks)),
     H = Math.max(600, top + bottom + Math.max(350, verticalTitle),
-      style.legend === 'right' ? top + legendItems.length * 32 + bottom : 0);
+      style.legend === 'right' && hasLegend
+        ? top + legendItems.length * legendRow + bottom
+        : 0);
   const pw = W - left - right, ph = H - top - bottom;
   const sx = (x: number) => left + ((x - x0) / (x1 - x0)) * pw,
     sy = (y: number) => top + ph - ((y - y0) / (y1 - y0)) * ph;
@@ -161,16 +168,52 @@ export function chartSVG(data: PlotData, style: ChartStyle): string {
     out.push('</g>');
   }
   if (data.annotation) text(left + 15, top + 25, data.annotation, 'start', fs);
-  if (style.legend !== 'none')
+  if (hasLegend) {
+    let legendX = 0,
+      legendY = 0;
+    if (style.legend === 'right') {
+      legendX = left + pw + rightAxis + 28;
+      legendY = top + 20;
+    } else if (style.legend === 'bottom') {
+      legendX = left;
+      legendY = H - (legendRows - 1) * legendRow - 25;
+    } else {
+      const contentWidth = 31 + legendWidth,
+        contentHeight = (legendItems.length - 1) * legendRow,
+        desiredX = (Number.isFinite(style.legendX) ? Number(style.legendX) : 0.72) * W,
+        desiredY = (Number.isFinite(style.legendY) ? Number(style.legendY) : 0.1) * H;
+      legendX = Math.max(6, Math.min(W - contentWidth - 6, desiredX));
+      legendY = Math.max(legendFontSize + 6, Math.min(H - contentHeight - 8, desiredY));
+    }
+    out.push(
+      `<g data-legend="true" data-legend-x="${(legendX / W).toFixed(6)}" data-legend-y="${(legendY / H).toFixed(6)}" style="cursor:move;touch-action:none"><title>拖动图例可自由移动</title>`,
+    );
     legendItems.forEach((s, i) => {
-      const x = style.legend === 'right' ? left + pw + rightAxis + 28 : left + ((i % 3) * pw) / 3,
+      const x =
+          style.legend === 'right' || style.legend === 'free'
+            ? legendX
+            : left + ((i % 3) * pw) / 3,
         y =
-          style.legend === 'right'
-            ? top + 20 + i * 32
-            : H - (legendRows - 1) * 28 - 25 + Math.floor(i / 3) * 28;
-      line(x, y - 5, x + 23, y - 5, s.color, style.lineWidth, s.dashed);
-      text(x + 31, y, s.name, 'start', fs);
+          style.legend === 'right' || style.legend === 'free'
+            ? legendY + i * legendRow
+            : legendY + Math.floor(i / 3) * legendRow;
+      const itemWidth = (s.kind === 'bar' ? 22 : 31) + labelWidth(s.name, legendFontSize);
+      // Transparent hit area so the whole row can start a drag, not only glyphs.
+      out.push(
+        `<rect x="${x - 3}" y="${y - legendFontSize}" width="${itemWidth + 6}" height="${legendFontSize + 8}" fill="none" pointer-events="all"/>`,
+      );
+      if (s.kind === 'bar') {
+        out.push(
+          `<rect x="${x}" y="${y - legendFontSize + 2}" width="14" height="${legendFontSize}" rx="2" fill="${s.color}"/>`,
+        );
+        text(x + 22, y, s.name, 'start', legendFontSize);
+      } else {
+        line(x, y - 5, x + 23, y - 5, s.color, style.lineWidth, s.dashed);
+        text(x + 31, y, s.name, 'start', legendFontSize);
+      }
     });
+    out.push('</g>');
+  }
   out.push('</svg>');
   return out.join('');
 }

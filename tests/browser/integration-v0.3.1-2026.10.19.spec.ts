@@ -18,10 +18,10 @@ test.beforeEach(async ({ page }) => {
 test('all four pages use worksheets and the application displays its version', async ({
   page,
 }, info) => {
-  await expect(page.locator('.sidebar')).toContainText('v0.3.4');
-  await expect(page.locator('.version-label')).toHaveText('PEROVSKITE LAB / v0.3.4');
+  await expect(page.locator('.sidebar')).toContainText('v0.4.4');
+  await expect(page.locator('.version-label')).toHaveText('PEROVSKITE LAB / v0.4.4');
   for (const [name, count] of [
-    ['光谱工作台', 2],
+    ['光谱工作台', 1],
     ['对象筛选', 1],
     ['校准与检出限', 1],
     ['浓度梯度', 1],
@@ -32,7 +32,7 @@ test('all four pages use worksheets and the application displays its version', a
     await expect(page.getByRole('grid').first()).toContainText('单位');
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({
-      path: info.outputPath(`${name}-v0.3.4-2026.10.19.png`),
+      path: info.outputPath(`${name}-v0.4.4-2026.10.19.png`),
       fullPage: true,
       animations: 'disabled',
     });
@@ -40,7 +40,7 @@ test('all four pages use worksheets and the application displays its version', a
       .locator('.worksheet')
       .first()
       .screenshot({
-        path: info.outputPath(`${name}-工作表-v0.3.4-2026.10.19.png`),
+        path: info.outputPath(`${name}-工作表-v0.4.4-2026.10.19.png`),
         animations: 'disabled',
       });
   }
@@ -63,13 +63,19 @@ test('raw spectrum paste expands columns, updates plotted data and supports undo
   await expect(page.getByLabel('原始数据第 3 行第 4 列', { exact: true })).toHaveValue('50');
   await sheet.getByRole('button', { name: '重做工作表修改', exact: true }).click();
   await expect(page.getByLabel('原始数据第 3 行第 4 列', { exact: true })).toHaveValue('80');
-  const samples = page.getByLabel('光谱工作台 样品信息 工作表', { exact: true });
-  await page.getByLabel('样品名称 2', { exact: true }).fill('实际水样');
-  await samples.getByRole('button', { name: '撤销工作表修改', exact: true }).click();
-  await expect(page.getByLabel('样品名称 2', { exact: true })).toHaveValue('A');
-  await paste(page.getByLabel('样品名称 1', { exact: true }), 'A\nB\nC\nD');
-  await expect(samples.locator('.worksheet-status')).toContainText('不能新增');
-  await expect(page.getByLabel('样品名称 1', { exact: true })).toHaveValue('Blank');
+  const samples = page.getByLabel('光谱工作台 原始光谱 工作表', { exact: true });
+  const nameInput = page.getByLabel('原始光谱 第 2 列名称', { exact: true });
+  await nameInput.fill('实际水样');
+  await nameInput.evaluate((el) => {
+    el.blur();
+    el.focus();
+  });
+  expect(await nameInput.evaluate((el) => [el.selectionStart, el.selectionEnd])).toEqual([0, 4]);
+  await paste(nameInput, 'A\tB\tC');
+  await expect(page.getByLabel('原始光谱 第 2 列名称', { exact: true })).toHaveValue('A');
+  await expect(page.getByLabel('原始光谱 第 3 列名称', { exact: true })).toHaveValue('B');
+  await expect(page.getByLabel('原始光谱 第 4 列名称', { exact: true })).toHaveValue('C');
+  await expect(samples.locator('.worksheet-status')).toContainText('已粘贴 3 列名称');
 });
 
 test('screening recalculates responses, protects results and preserves ordering and storage', async ({
@@ -146,8 +152,8 @@ test('gradient stays editable on errors, recalculates, undoes changes and export
   const downloaded = page.waitForEvent('download');
   await page.getByRole('button', { name: '导出 Excel', exact: true }).click();
   const file = await downloaded;
-  expect(file.suggestedFilename()).toMatch(/-v0\.3\.4-\d{4}\.\d{1,2}\.\d{1,2}\.xlsx$/);
-  const path = info.outputPath('梯度-v0.3.4-2026.10.19.xlsx');
+  expect(file.suggestedFilename()).toMatch(/-v0\.4\.4-\d{4}\.\d{1,2}\.\d{1,2}\.xlsx$/);
+  const path = info.outputPath('梯度-v0.4.4-2026.10.19.xlsx');
   await file.saveAs(path);
   const records = XLSX.utils.sheet_to_json<Record<string, unknown>>(
     XLSX.read(await readFile(path)).Sheets.Data,

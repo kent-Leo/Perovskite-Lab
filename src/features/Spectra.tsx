@@ -1,36 +1,42 @@
 import { useMemo, useState } from 'react';
-import { Plus, Trash2, ChevronUp, ChevronDown, ArrowUpRight } from 'lucide-react';
 import { useWorkspace } from '../state/workspace';
-import { roles, uid, type Role } from '../domain/types';
-import { spectrumStats, interpolate, numeric, convertConcentration, fmt } from '../domain/math';
+import { spectrumStats, numeric, fmt } from '../domain/math';
+import { peakMetrics } from '../domain/peak';
+import { rawColumnIndex, rawColumnKey, rawSpectrumColor, rawSpectrumLabel } from '../domain/raw-spectra';
 import { ChartPanel } from '../components/ChartPanel';
 import { ErrorNote, Field, Metric, SectionHead } from '../components/ui';
-import { WorkspaceWorksheet as Worksheet } from '../components/WorkspaceWorksheet-v0.3.1-2026.10.19';
-import { units } from '../domain/math';
-import type { WorksheetColumn } from '../domain/worksheet-v0.2.0-2026.10.19';
 import { exportExcel } from '../services/download';
-export function Spectra({
-  onImport,
-  onNavigate,
-}: {
-  onImport: () => void;
-  onNavigate: (page: string) => void;
-}) {
+export function Spectra() {
   const { w, update, notify } = useWorkspace(),
     [normalize, setNormalize] = useState(false),
     [single, setSingle] = useState(false),
-    [selected, setSelected] = useState(w.spectra[0]?.id ?? ''),
-    [wave, setWave] = useState('516'),
-    [error, setError] = useState('');
+    [selected, setSelected] = useState(w.spectra[0]?.id ?? '');
   const rawSpectra = useMemo(() => {
     const points = new Map((w.rawSpectra ?? w.spectra).map((s) => [s.id, s.points]));
+    const columns = new Map(
+      Object.entries(w.rawColumnSpectra ?? {}).flatMap(([key, id]) => {
+        const column = rawColumnIndex(key);
+        return column === null ? [] : [[id, column] as const];
+      }),
+    );
+    const metadata = w.sheetMetadata?.raw ?? {};
     return w.spectra.flatMap((sample) => {
       const raw = points.get(sample.id);
-      return raw ? [{ ...sample, points: raw }] : [];
+      if (!raw) return [];
+      const column = columns.get(sample.id);
+      const meta = column === undefined ? undefined : metadata[rawColumnKey(column)];
+      return [
+        {
+          ...sample,
+          name: rawSpectrumLabel(meta, sample.name),
+          color: rawSpectrumColor(meta, sample.color),
+          points: raw,
+        },
+      ];
     });
-  }, [w.rawSpectra, w.spectra]);
+  }, [w.rawSpectra, w.spectra, w.sheetMetadata, w.rawColumnSpectra]);
   const active = rawSpectra.find((s) => s.id === selected) ?? rawSpectra[0],
-    shown = single ? (active?.visible ? [active] : []) : rawSpectra.filter((s) => s.visible);
+    shown = single ? (active ? [active] : []) : rawSpectra.filter((s) => s.visible);
   const chart = useMemo(() => {
     const invalid = shown.filter((s) => normalize && spectrumStats(s.points)!.max <= 0);
     return {
@@ -49,67 +55,31 @@ export function Spectra({
           }),
     };
   }, [shown, normalize]);
-  const stats = active ? spectrumStats(active.points) : null;
-  function move(i: number, by: number) {
-    update((prev) => {
-      const arr = [...prev.spectra];
-      arr.splice(i + by, 0, arr.splice(i, 1)[0]);
-      return { spectra: arr };
-    });
-  }
-  function extract() {
-    try {
-      const x = numeric(wave);
-      if (x === null) throw new Error('请输入有效的提取波长');
-      const eligible = rawSpectra.filter(
-        (s) => s.visible && (s.role === 'target' || s.role === 'blank'),
-      );
-      if (!eligible.length) throw new Error('请先将校准光谱指定为目标物或空白');
-      const rows = eligible.map((s) => {
-        const c = numeric(s.concentration),
-          f = interpolate(s.points, x);
-        if (c === null || c < 0) throw new Error(`${s.name} 缺少有效浓度`);
-        if (f === null) throw new Error(`${s.name} 的光谱未覆盖 ${x} nm`);
+  const excitation = w.excitation ?? '',
+    excitationValue = numeric(excitation),
+    metrics = active ? peakMetrics(active.points, excitation) : null,
+    range =
+      active && active.points.length
+        ? `${fmt(active.points[0].x, 5)}–${fmt(active.points.at(-1)!.x, 5)} nm`
+        : '—';
+  function exportPeaks() {
+    if (!shown.length) return;
+    exportExcel(
+      shown.map((s) => {
+        const m = peakMetrics(s.points, excitation);
         return {
-          id: uid(),
-          concentration: String(convertConcentration(c, s.unit, w.calUnit)),
-          intensity: String(f),
-          included: true,
+          光谱: s.name,
+          峰位_nm: m.peak ?? '',
+          峰强度_a_u: m.intensity ?? '',
+          半高宽_nm: m.fwhm ?? '',
+          斯托克斯位移_nm: m.stokes ?? '',
+          峰面积_a_u_nm: m.area ?? '',
+          积分起点_nm: m.from ?? '',
+          积分终点_nm: m.to ?? '',
         };
-      });
-      const blank = eligible.find((s) => s.role === 'blank');
-      update({ calibration: rows, calF0: blank ? String(interpolate(blank.points, x)) : w.calF0 });
-      notify(`已提取 ${x} nm 处强度并生成 ${rows.length} 个校准点`);
-      onNavigate('calibration');
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
-  function screening() {
-    try {
-      const x = numeric(wave);
-      if (x === null) throw new Error('请输入有效的提取波长');
-      const rows = rawSpectra
-        .filter((s) => s.visible)
-        .map((s) => {
-          const f = interpolate(s.points, x);
-          if (f === null) throw new Error(`${s.name} 的光谱未覆盖 ${x} nm`);
-          return {
-            id: uid(),
-            name: s.name,
-            role: s.role,
-            concentration: s.concentration,
-            unit: s.unit,
-            intensity: String(f),
-            notes: `${x} nm · ${s.source}`,
-          };
-        });
-      if (!rows.length) throw new Error('请至少显示一条光谱');
-      update({ objects: rows, blankId: rows.find((r) => r.role === 'blank')?.id ?? '' });
-      onNavigate('screening');
-    } catch (e) {
-      setError((e as Error).message);
-    }
+      }),
+      '峰特性指标',
+    ).catch((e) => notify(e.message));
   }
   return (
     <>
@@ -154,162 +124,52 @@ export function Spectra({
         subtitle={normalize ? '按各曲线最大值归一化' : '原始光谱数据 · 发射光谱'}
       />
       {chart.error && <ErrorNote>{chart.error}</ErrorNote>}
-      <div className="metrics-row">
-        <Metric label="当前光谱" value={active?.name ?? '—'} />
-        <Metric label="峰位 λmax" value={fmt(stats?.peak, 5)} unit="nm" />
-        <Metric label="峰值 Fmax" value={fmt(stats?.max, 6)} unit="a.u." />
-        <Metric label="半峰宽 FWHM" value={fmt(stats?.fwhm, 4)} unit="nm" />
-        <Metric label="原始峰面积" value={fmt(stats?.area, 5)} unit="a.u.·nm" />
-      </div>
-      <div className="analysis-controls">
-        <Field label="当前查看光谱">
-          <select value={active?.id ?? ''} onChange={(e) => setSelected(e.target.value)}>
-            {rawSpectra.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-      </div>
-      <section className="panel">
+      <section className="peak-panel" aria-labelledby="peak-title">
         <SectionHead
-          title="样品与分析对象"
-          detail="原始光谱表决定绘图数据；此表设置曲线名称、颜色与显示，角色和浓度用于后续分析。"
+          title="峰特性分析"
+          detail="基于当前查看光谱的原始数据；斯托克斯位移 = 峰位 − 激发波长，峰面积按测量范围梯形积分。"
           action={
-            <button className="small-button" onClick={onImport}>
-              <Plus size={16} />
-              导入样品
+            <button className="small-button" disabled={!shown.length} onClick={exportPeaks}>
+              导出峰指标
             </button>
           }
         />
-        <Worksheet
-          sheetId="samples"
-          book="光谱工作台"
-          sheet={w.sheetNames?.samples ?? '样品信息'}
-          onRenameSheet={(name) => update((prev) => ({ sheetNames: { ...prev.sheetNames, samples: name } }))}
-          onMoveRow={(from, to) => move(from, to - from)}
-          minRows={w.spectra.length || 1}
-          allowAddRows={false}
-          rowLimit={w.spectra.length}
-          columns={
-            [
-              { key: 'visible', title: '显示', type: 'checkbox' },
-              { key: 'name', title: '样品名称', designation: 'Label' },
-              {
-                key: 'role',
-                title: '角色',
-                type: 'select',
-                options: Object.entries(roles).map(([value, label]) => ({ value, label })),
-              },
-              { key: 'concentration', title: '浓度', type: 'number' },
-              {
-                key: 'unit',
-                title: '单位',
-                type: 'select',
-                options: units.map((value) => ({ value, label: value })),
-              },
-              { key: 'color', title: '颜色', type: 'color' },
-              { key: 'source', title: '数据来源', readOnly: true },
-              { key: 'actions', title: '排序 / 删除', readOnly: true },
-            ] satisfies WorksheetColumn[]
-          }
-          rows={w.spectra.map((s) => [
-            String(s.visible),
-            s.name,
-            s.role,
-            s.concentration,
-            s.unit,
-            s.color,
-            s.source,
-            '',
-          ])}
-          onChange={(rows) =>
-            update({
-              spectra: w.spectra.map((s, i) => ({
-                ...s,
-                visible: rows[i]?.[0] === 'true',
-                name: rows[i]?.[1] ?? '',
-                role: (rows[i]?.[2] ?? '') as Role,
-                concentration: rows[i]?.[3] ?? '',
-                unit: rows[i]?.[4] ?? '',
-                color: rows[i]?.[5] ?? '',
-              })),
-            })
-          }
-          cellLabel={(i, c) =>
-            c === 0
-              ? `显示 ${w.spectra[i]?.name ?? ''}`
-              : `${['显示', '样品名称', '样品角色', '样品浓度', '样品单位', '样品颜色', '数据来源', '样品操作'][c]} ${i + 1}`
-          }
-          invalidCell={(i, c) =>
-            c === 3 &&
-            !!w.spectra[i]?.concentration.trim() &&
-            (numeric(w.spectra[i].concentration) ?? -1) < 0
-          }
-          renderCell={(i, c) => {
-            const s = w.spectra[i];
-            if (c !== 7 || !s) return undefined;
-            return (
-              <div className="row-actions">
-                <button
-                  aria-label={`上移样品 ${i + 1}`}
-                  disabled={i === 0}
-                  onClick={() => move(i, -1)}
-                >
-                  <ChevronUp size={15} />
-                </button>
-                <button
-                  aria-label={`下移样品 ${i + 1}`}
-                  disabled={i === w.spectra.length - 1}
-                  onClick={() => move(i, 1)}
-                >
-                  <ChevronDown size={15} />
-                </button>
-                <button
-                  aria-label={`删除样品 ${i + 1}`}
-                  onClick={() => update({ spectra: w.spectra.filter((r) => r.id !== s.id) })}
-                >
-                  <Trash2 size={15} />
-                </button>
-              </div>
-            );
-          }}
-        />
-        {!w.spectra.length && <div className="empty">导入文件以添加第一条光谱</div>}
-        <div className="panel-foot">
-          <span className="muted">FWHM 使用零基线主峰；测量范围不足时显示“—”。</span>
-          <button
-            className="text-button"
-            disabled={!w.spectra.length}
-            onClick={() =>
-              exportExcel(
-                w.spectra.flatMap((s) =>
-                  s.points.map((p) => ({ 样品: s.name, 波长_nm: p.x, 荧光强度: p.y })),
-                ),
-                '原始光谱数据',
-              ).catch((e) => notify(e.message))
-            }
-          >
-            导出原始数据
-          </button>
+        <div className="peak-controls">
+          <Field label="当前查看光谱">
+            <select value={active?.id ?? ''} onChange={(e) => setSelected(e.target.value)}>
+              {rawSpectra.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="激发波长 / nm" hint="留空时斯托克斯位移显示为 —">
+            <input
+              type="number"
+              min={1}
+              placeholder="例如 450"
+              value={excitation}
+              onChange={(e) => update({ excitation: e.target.value })}
+            />
+          </Field>
         </div>
-      </section>
-      <section className="extraction-panel">
-        <div>
-          <h3>从光谱提取检测数据</h3>
-          <p>在指定波长线性插值，不进行范围外推。</p>
+        <div className="metrics-row">
+          <Metric label="峰位 λmax" value={fmt(metrics?.peak, 5)} unit="nm" />
+          <Metric label="峰强度 Fmax" value={fmt(metrics?.intensity, 6)} unit="a.u." />
+          <Metric label="半高宽 FWHM" value={fmt(metrics?.fwhm, 4)} unit="nm" />
+          <Metric label="斯托克斯位移" value={fmt(metrics?.stokes, 5)} unit="nm" />
+          <Metric label="峰面积" value={fmt(metrics?.area, 5)} unit="a.u.·nm" />
         </div>
-        <Field label="波长 / nm">
-          <input type="number" value={wave} onChange={(e) => setWave(e.target.value)} />
-        </Field>
-        <button onClick={screening}>生成对象筛选</button>
-        <button className="primary" onClick={extract}>
-          生成校准数据
-          <ArrowUpRight size={16} />
-        </button>
+        <p className="peak-note">
+          积分区间 {range} · 峰面积按原始强度梯形积分
+          {excitationValue === null ? ' · 输入激发波长后计算斯托克斯位移' : ''}
+          {metrics?.stokes !== null && metrics?.stokes !== undefined && metrics.stokes <= 0
+            ? ' · 激发波长应小于发射峰'
+            : ''}
+          {normalize ? ' · 归一化仅影响绘图，指标使用原始强度' : ''}
+        </p>
       </section>
-      {error && <ErrorNote>{error}</ErrorNote>}
     </>
   );
 }

@@ -108,6 +108,22 @@ export function normalizeWorksheetCell(value: string, column: WorksheetColumn): 
     throw new Error('颜色请使用 #RRGGBB 格式');
   return value;
 }
+/**
+ * Values for the name / unit / comment header rows.
+ * A clipboard block may be one row spread across columns, or a single column
+ * (for example a vertical list copied from Excel) filled left to right.
+ */
+export function pasteMetadataValues(text: string): string[] {
+  const normalized = text.replace(/\r\n?/g, '\n');
+  if (!/[\t\n]/.test(normalized)) return [normalized];
+  const rows = normalized.split('\n').map((row) => row.split('\t'));
+  let end = rows.length;
+  while (end && rows[end - 1].every((value) => !value.trim())) end--;
+  const block = rows.slice(0, end);
+  if (!block.length) return [''];
+  if (block.every((row) => row.length <= 1)) return block.map((row) => row[0] ?? '');
+  return block[0];
+}
 export function pasteWorksheetRange(
   rows: string[][],
   columns: WorksheetColumn[],
