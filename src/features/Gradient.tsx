@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Download, Plus } from 'lucide-react';
 import { useWorkspace } from '../state/workspace';
+import { useWorkbook } from '../state/useWorkbook';
 import {
   concentrationGradient, convertConcentrationText, convertConcentration,
   numeric, fmt, units, normalizeConcentrationUnit,
@@ -11,6 +12,7 @@ import { exportExcel } from '../services/download';
 import { ErrorNote, Field, Metric, SectionHead } from '../components/ui';
 export function Gradient() {
   const { w, update, notify } = useWorkspace(),
+    wb = useWorkbook('gradient'),
     g = w.gradient;
   const set = (p: Partial<typeof g>) => update({ gradient: { ...g, ...p } });
   const stockUnit = normalizeConcentrationUnit(g.unit);
@@ -20,13 +22,13 @@ export function Gradient() {
       const patch = kind === 'stock'
         ? { stock: convertConcentrationText(g.stock, stockUnit, unit), unit }
         : { targets: convertConcentrationText(g.targets, targetUnit, unit), targetUnit: unit };
+      // 列头单位元数据按 sheet 存放：只写当前活动 gradient sheet。
+      const sheet = w.sheetMetadata?.[wb.activeId];
       update({
         gradient: { ...g, targetUnit, ...patch },
         ...(kind === 'target' ? { sheetMetadata: {
           ...w.sheetMetadata,
-          gradient: { ...w.sheetMetadata?.gradient, target: {
-            ...w.sheetMetadata?.gradient?.target, unit,
-          } },
+          [wb.activeId]: { ...sheet, target: { ...sheet?.target, unit } },
         } } : {}),
       });
     } catch (e) {
@@ -40,6 +42,13 @@ export function Gradient() {
         .split(/[\s,，;；]+/)
         .filter(Boolean)
     : g.targets.split('\n');
+  /** Insert a blank target row at any position. */
+  function insertTarget(index: number) {
+    const list = [...targets];
+    const at = Math.max(0, Math.min(index, list.length));
+    list.splice(at, 0, '');
+    set({ targets: list.join('\n') });
+  }
   const result = useMemo(() => {
     try {
       return {
@@ -160,10 +169,16 @@ export function Gradient() {
               />
             </div>
             <Worksheet
-              sheetId="gradient"
+              sheetId={wb.activeId}
               book="浓度梯度"
-              sheet={w.sheetNames?.gradient ?? '梯度配液'}
-              onRenameSheet={(name) => update((prev) => ({ sheetNames: { ...prev.sheetNames, gradient: name } }))}
+              sheet={wb.activeName}
+              onRenameSheet={wb.rename}
+              sheetTabs={wb.tabs}
+              activeSheetId={wb.activeId}
+              onSelectSheet={wb.select}
+              onCreateSheet={wb.create}
+              onDeleteSheet={wb.remove}
+              onInsertRow={insertTarget}
               minRows={Math.max(1, targets.length)}
               columns={
                 [

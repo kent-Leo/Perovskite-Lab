@@ -1,7 +1,15 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, Upload, FlaskConical } from 'lucide-react';
 import { useWorkspace } from '../state/workspace';
-import { responses, uid, type ResponseMode } from '../domain/types';
+import { useWorkbook } from '../state/useWorkbook';
+import {
+  responses,
+  uid,
+  type ChartStyle,
+  type PlotData,
+  type Point,
+  type ResponseMode,
+} from '../domain/types';
 import {
   numeric,
   response,
@@ -13,39 +21,138 @@ import {
   units,
   convertConcentration,
 } from '../domain/math';
+import {
+  PlotSheetBar,
+  SheetChartGallery,
+  type PlotViewMode,
+  type SheetGalleryChart,
+} from '../components/SheetPlotPanel-v0.5.5-2026.10.22';
 import { ChartPanel } from '../components/ChartPanel';
 import { ErrorNote, Field, Metric, SectionHead } from '../components/ui';
 import { WorkspaceWorksheet as Worksheet } from '../components/WorkspaceWorksheet-v0.3.1-2026.10.19';
 import type { WorksheetColumn } from '../domain/worksheet-v0.2.0-2026.10.19';
+import type { CalibrationSheetPayload } from '../domain/workbook';
 import { exportExcel } from '../services/download';
+
+type Fit = ReturnType<typeof regress>;
+
+interface CalibrationChartResult {
+  fit: Fit | null;
+  /** 参与拟合的数据点。 */
+  used: Point[];
+  /** 全部已勾选数据点（含拟合范围外的点）。 */
+  points: Point[];
+  /** 拟合方程文本；未完成拟合时为空串。 */
+  equation: string;
+  /** 散点 + 拟合线图数据（含 annotation）；未完成拟合时为 null。 */
+  data: PlotData | null;
+  error: string;
+}
+
+function equationOf(fit: Fit): string {
+  return `y = ${fmt(fit.slope, 5)}x ${fit.intercept < 0 ? '−' : '+'} ${fmt(Math.abs(fit.intercept), 5)}`;
+}
+
+/**
+ * 单个 sheet 的拟合结果与校准曲线图数据（纯函数）。
+ * 当前活动 sheet 的图表与「全部 sheet」画廊共用，保证两处计算一致；
+ * payload 来自该 sheet 的 CalibrationSheetPayload，不能读取其他 sheet 的顶层字段。
+ */
+function calibrationChart(
+  payload: CalibrationSheetPayload,
+  style: ChartStyle,
+): CalibrationChartResult {
+  try {
+    const included = payload.calibration.filter((r) => r.included);
+    // 空 sheet（无校准行或没有任何参与拟合的行）是空状态而不是拟合错误：
+    // 图表显示空状态，画廊卡片也不显示错误（LOD 面板另行提示需先完成拟合）。
+    if (!included.length)
+      return { fit: null, used: [], points: [], equation: '', data: null, error: '' };
+    const f0 = numeric(payload.calF0) ?? NaN,
+      min = payload.fitMin.trim() ? numeric(payload.fitMin) : null,
+      max = payload.fitMax.trim() ? numeric(payload.fitMax) : null;
+    if ((payload.fitMin.trim() && min === null) || (payload.fitMax.trim() && max === null))
+      throw new Error('拟合范围应为有效数值');
+    if (min !== null && max !== null && max < min) throw new Error('拟合上限应不小于下限');
+    const points = included.map((r, i) => {
+      const x = numeric(r.concentration),
+        f = numeric(r.intensity);
+      if (x === null || x < 0 || f === null)
+        throw new Error(`已选数据第 ${i + 1} 行存在无效浓度或强度`);
+      return { x, y: response(f, f0, payload.calMode) };
+    });
+    const used = points.filter(
+      (p) => (min === null || p.x >= min) && (max === null || p.x <= max),
+    );
+    const fit = regress(used),
+      equation = equationOf(fit);
+    return {
+      fit,
+      used,
+      points,
+      equation,
+      data: {
+        series: [
+          {
+            name: '测量值',
+            color: style.primaryColor ?? '#258873',
+            kind: 'scatter' as const,
+            points: used,
+          },
+          {
+            name: '线性拟合',
+            color: style.secondaryColor ?? '#b6873f',
+            points: [
+              { x: fit.min, y: fit.slope * fit.min + fit.intercept },
+              { x: fit.max, y: fit.slope * fit.max + fit.intercept },
+            ],
+          },
+        ],
+        annotation: `${equation}    R² = ${fmt(fit.r2, 6)}`,
+      },
+      error: '',
+    };
+  } catch (e) {
+    return {
+      fit: null,
+      used: [],
+      points: [],
+      equation: '',
+      data: null,
+      error: (e as Error).message,
+    };
+  }
+}
+
 export function Calibration({ onImport }: { onImport: () => void }) {
   const { w, update, notify } = useWorkspace();
+  const wb = useWorkbook('calibration');
   const [showResiduals, setShowResiduals] = useState(false);
-  const result = useMemo(() => {
-    try {
-      const f0 = numeric(w.calF0) ?? NaN,
-        min = w.fitMin.trim() ? numeric(w.fitMin) : null,
-        max = w.fitMax.trim() ? numeric(w.fitMax) : null;
-      if ((w.fitMin.trim() && min === null) || (w.fitMax.trim() && max === null))
-        throw new Error('拟合范围应为有效数值');
-      if (min !== null && max !== null && max < min) throw new Error('拟合上限应不小于下限');
-      const points = w.calibration
-        .filter((r) => r.included)
-        .map((r, i) => {
-          const x = numeric(r.concentration),
-            f = numeric(r.intensity);
-          if (x === null || x < 0 || f === null)
-            throw new Error(`已选数据第 ${i + 1} 行存在无效浓度或强度`);
-          return { x, y: response(f, f0, w.calMode) };
-        });
-      const used = points.filter(
-        (p) => (min === null || p.x >= min) && (max === null || p.x <= max),
-      );
-      return { fit: regress(used), used, points, error: '' };
-    } catch (e) {
-      return { fit: null, used: [], points: [], error: (e as Error).message };
-    }
-  }, [w.calibration, w.calF0, w.calMode, w.fitMin, w.fitMax]);
+  const [viewMode, setViewMode] = useState<PlotViewMode>('active');
+  const result = useMemo(
+    () =>
+      calibrationChart(
+        {
+          calibration: w.calibration,
+          calMode: w.calMode,
+          calUnit: w.calUnit,
+          calF0: w.calF0,
+          blankRepeats: w.blankRepeats,
+          manualSigma: w.manualSigma,
+          sigmaSource: w.sigmaSource,
+          lodFactor: w.lodFactor,
+          fitMin: w.fitMin,
+          fitMax: w.fitMax,
+        },
+        w.styles.calibration,
+      ),
+    [w.calibration, w.calF0, w.calMode, w.fitMin, w.fitMax, w.styles.calibration],
+  );
+  // 「全部 sheet」画廊：逐 sheet 用同一纯函数计算，未激活 sheet 的数据来自 store。
+  const charts: SheetGalleryChart[] = wb.snapshots.map(({ tab, payload }) => {
+    const chart = calibrationChart(payload as CalibrationSheetPayload, w.styles.calibration);
+    return { id: tab.id, name: tab.name, data: chart.data, error: chart.error || undefined };
+  });
   const limits = useMemo(() => {
     try {
       if (!result.fit) throw new Error('完成有效拟合后计算');
@@ -89,28 +196,15 @@ export function Calibration({ onImport }: { onImport: () => void }) {
       notify((e as Error).message);
     }
   }
+  /** Insert a blank calibration point at any position. */
+  function insertPoint(index: number) {
+    const rows = [...w.calibration];
+    const at = Math.max(0, Math.min(index, rows.length));
+    rows.splice(at, 0, { id: uid(), concentration: '', intensity: '', included: true });
+    update({ calibration: rows });
+  }
   const fit = result.fit,
-    equation = fit
-      ? `y = ${fmt(fit.slope, 5)}x ${fit.intercept < 0 ? '−' : '+'} ${fmt(Math.abs(fit.intercept), 5)}`
-      : '—';
-  const series = fit
-    ? [
-        {
-          name: '测量值',
-          color: w.styles.calibration.primaryColor ?? '#258873',
-          kind: 'scatter' as const,
-          points: result.used,
-        },
-        {
-          name: '线性拟合',
-          color: w.styles.calibration.secondaryColor ?? '#b6873f',
-          points: [
-            { x: fit.min, y: fit.slope * fit.min + fit.intercept },
-            { x: fit.max, y: fit.slope * fit.max + fit.intercept },
-          ],
-        },
-      ]
-    : [];
+    equation = fit ? result.equation : '—';
   return (
     <>
       <div className="analysis-controls">
@@ -174,12 +268,30 @@ export function Calibration({ onImport }: { onImport: () => void }) {
         </Field>
       </div>
       {result.error && <ErrorNote>{result.error}</ErrorNote>}
-      <ChartPanel
-        kind="calibration"
-        title="浓度–响应校准曲线"
-        subtitle="普通最小二乘 · 含截距 · 不加权"
-        data={{ series, annotation: fit ? `${equation}    R² = ${fmt(fit.r2, 6)}` : undefined }}
+      <PlotSheetBar
+        tabs={wb.tabs}
+        activeId={wb.activeId}
+        onSelect={wb.select}
+        mode={viewMode}
+        onModeChange={setViewMode}
       />
+      {viewMode === 'all' ? (
+        <SheetChartGallery
+          charts={charts}
+          style={w.styles.calibration}
+          onSelect={(id) => {
+            wb.select(id);
+            setViewMode('active');
+          }}
+        />
+      ) : (
+        <ChartPanel
+          kind="calibration"
+          title="浓度–响应校准曲线"
+          subtitle={`${wb.activeName} · 普通最小二乘 · 含截距 · 不加权`}
+          data={result.data ?? { series: [] }}
+        />
+      )}
       <div className="metrics-row four">
         <Metric label="拟合方程" value={equation} />
         <Metric label="决定系数 R²" value={fmt(fit?.r2, 6)} />
@@ -225,10 +337,16 @@ export function Calibration({ onImport }: { onImport: () => void }) {
             }
           />
           <Worksheet
-            sheetId="calibration"
+            sheetId={wb.activeId}
             book="校准与检出限"
-            sheet={w.sheetNames?.calibration ?? '校准数据'}
-            onRenameSheet={(name) => update((prev) => ({ sheetNames: { ...prev.sheetNames, calibration: name } }))}
+            sheet={wb.activeName}
+            onRenameSheet={wb.rename}
+            sheetTabs={wb.tabs}
+            activeSheetId={wb.activeId}
+            onSelectSheet={wb.select}
+            onCreateSheet={wb.create}
+            onDeleteSheet={wb.remove}
+            onInsertRow={insertPoint}
             minRows={Math.max(1, w.calibration.length)}
             columns={
               [

@@ -373,3 +373,109 @@
 .worksheet .worksheet-extra-row td {
   background: #eef4f9;
 }
+
+/* Multi-sheet tab bar. Only rendered when the Worksheet gets sheetTabs + onSelectSheet;
+   the legacy single tab rules above stay untouched for the standalone demo page. */
+.worksheet-bottom > .worksheet-sheet-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  padding: 5px 0 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.worksheet-sheet-tabs::-webkit-scrollbar {
+  height: 4px;
+}
+.worksheet-sheet-tabs::-webkit-scrollbar-thumb {
+  background: #c6d2df;
+  border-radius: 2px;
+}
+.worksheet-bottom button.worksheet-sheet-tab-item {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 190px;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-bottom: 2px solid transparent;
+  border-radius: 4px 4px 0 0;
+  background: transparent;
+  color: #58718b;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.worksheet-bottom button.worksheet-sheet-tab-item:hover:enabled {
+  background: #e2eaf3;
+  color: #375d88;
+}
+.worksheet-bottom button.worksheet-sheet-tab-item.is-active {
+  background: #fff;
+  border-color: #c6d2df;
+  border-bottom-color: #3577ba;
+  color: #375d88;
+  font-weight: 600;
+  cursor: default;
+}
+.worksheet-sheet-tabs .worksheet-sheet-tab.is-renaming {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100%;
+  padding: 5px 10px;
+  border: 1px solid #c6d2df;
+  border-bottom: 2px solid #3577ba;
+  border-radius: 4px 4px 0 0;
+  background: #fff;
+  color: #375d88;
+  font-weight: 600;
+}
+.worksheet-sheet-tabs .worksheet-sheet-tab.is-renaming > svg {
+  flex-shrink: 0;
+}
+.worksheet-bottom > .worksheet-sheet-meta {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-shrink: 0;
+  padding: 4px 0;
+}
+.worksheet-sheet-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.worksheet-sheet-actions button {
+  padding: 3px 5px;
+}
+@media (max-width: 700px) {
+  .worksheet-bottom > .worksheet-sheet-tabs {
+    padding-top: 4px;
+  }
+  .worksheet-bottom button.worksheet-sheet-tab-item {
+    max-width: 132px;
+    padding: 5px 8px;
+  }
+  .worksheet-bottom > .worksheet-sheet-meta {
+    gap: 6px;
+  }
+}
+
+/* Navigation vs edit mode feedback for the active cell. */
+.worksheet td.is-active.is-editing {
+  background: #fff;
+  box-shadow: inset 0 0 0 2px #1f5fa8;
+}
+

@@ -1,17 +1,19 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ClipboardPaste, Plus, ArrowDownToLine, Trash2 } from 'lucide-react';
 import { useWorkspace } from '../state/workspace';
+import { useWorkbook } from '../state/useWorkbook';
 import { numeric } from '../domain/math';
 import { palette, type ColumnMetadata } from '../domain/types';
+import { blankGrid, defaultRawMapping, defaultRawSheet } from '../domain/workbook';
+import { insertRawSheetColumn, insertRawSheetRow } from '../domain/raw-sheet-edit';
 import {
   rawColumnIndex,
   rawColumnKey,
   rawSpectrumColor,
 } from '../domain/raw-spectra';
-import { mergeImport, type Mapping } from '../services/import';
+import type { Mapping } from '../services/import';
 import { dateStamp } from '../services/download';
 import {
-  emptyPasteGrid,
   growPasteGrid,
   pasteIntoGrid,
   preparePastedSpectra,
@@ -24,15 +26,22 @@ import { pasteWorksheetRange, type WorksheetColumn } from '../domain/worksheet-v
 
 export function PasteSpectraTable() {
   const { w, update, notify } = useWorkspace();
-  const [grid, setGrid] = useState(emptyPasteGrid),
-    [mapping, setMapping] = useState<Mapping>(() => suggestPasteMapping([], w.calUnit)),
-    [error, setError] = useState(''),
+  const wb = useWorkbook('raw');
+  const [error, setError] = useState(''),
     [plotted, setPlotted] = useState(false);
   const batch = useRef(new Map<number, string>());
   const source = `粘贴光谱-${dateStamp()}`;
+  // The draft grid/mapping of the active sheet live in the workspace (w.rawSheet),
+  // so editing a sheet and switching sheets persist the table as-is.
+  const sheet = useMemo(
+    () => w.rawSheet ?? defaultRawSheet(w.calUnit),
+    [w.rawSheet, w.calUnit],
+  );
+  const grid = sheet.grid,
+    mapping: Mapping = sheet.mapping;
   const rows = useMemo(() => trimPasteGrid(grid), [grid]);
-  const columns = Array.from({ length: grid[0].length }, (_, i) => i);
-  const rawMetadata = w.sheetMetadata?.raw ?? {};
+  const columns = Array.from({ length: grid[0]?.length ?? 0 }, (_, i) => i);
+  const rawMetadata = w.sheetMetadata?.[wb.activeId] ?? {};
   const metaAt = (column: number): ColumnMetadata => rawMetadata[rawColumnKey(column)] ?? {};
   // Stable per-column default so colors do not jump when intensity columns change.
   const colorAt = (column: number) =>
@@ -52,13 +61,33 @@ export function PasteSpectraTable() {
       return { value: null, error: (e as Error).message };
     }
   }, [rows, mapping, source]);
+  // Switching sheets abandons the in-memory batch and per-sheet plot feedback.
+  useEffect(() => {
+    batch.current = new Map();
+    setPlotted(false);
+    setError('');
+  }, [wb.activeId]);
+  function patchSheet(changes: { grid?: string[][]; mapping?: Mapping }) {
+    update((prev) => {
+      const current = prev.rawSheet ?? defaultRawSheet(prev.calUnit);
+      return {
+        rawSheet: {
+          grid: changes.grid ?? current.grid,
+          mapping: changes.mapping ?? current.mapping,
+        },
+      };
+    });
+  }
   /**
    * Keep plotted spectra in step with the raw table: the visible curves are the
    * columns currently marked as intensity columns.
    */
-  function updateMapping(next: Mapping) {
-    setMapping(next);
+  function updateMapping(next: Mapping, nextGrid?: string[][]) {
     update((prev) => ({
+      rawSheet: {
+        grid: nextGrid ?? prev.rawSheet?.grid ?? blankGrid(),
+        mapping: next,
+      },
       spectra: prev.spectra.map((sample) => {
         const entry = Object.entries(prev.rawColumnSpectra ?? {}).find(
           ([, id]) => id === sample.id,
@@ -74,15 +103,16 @@ export function PasteSpectraTable() {
     setError('');
   };
   function setColor(column: number, color: string) {
+    const sheetId = wb.activeId;
     update((prev) => {
       const key = rawColumnKey(column),
         id = prev.rawColumnSpectra?.[key];
       return {
         sheetMetadata: {
           ...prev.sheetMetadata,
-          raw: {
-            ...prev.sheetMetadata?.raw,
-            [key]: { ...prev.sheetMetadata?.raw?.[key], color },
+          [sheetId]: {
+            ...prev.sheetMetadata?.[sheetId],
+            [key]: { ...prev.sheetMetadata?.[sheetId]?.[key], color },
           },
         },
         spectra: id
@@ -91,9 +121,52 @@ export function PasteSpectraTable() {
       };
     });
   }
+  /** Insert a blank row above the active cell (works at any position). */
+  function insertRow(row: number) {
+    try {
+      update((prev) => {
+        const current = prev.rawSheet ?? defaultRawSheet(prev.calUnit);
+        return { rawSheet: insertRawSheetRow(current, row) };
+      });
+      setError('');
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  /** Insert a blank column left of the active cell, shifting mapping and header metadata. */
+  function insertColumn(column: number) {
+    try {
+      // Column indexes shift, so drop the cached column→spectrum ids; the persisted
+      // rawColumnSpectra mapping is re-keyed below and is used on the next plot.
+      batch.current = new Map();
+      const sheetId = wb.activeId;
+      update((prev) => {
+        const current = prev.rawSheet ?? defaultRawSheet(prev.calUnit);
+        const result = insertRawSheetColumn(
+          current,
+          prev.sheetMetadata?.[sheetId],
+          prev.rawColumnSpectra,
+          column,
+        );
+        return {
+          rawSheet: result.rawSheet,
+          rawColumnSpectra: result.columnSpectra,
+          sheetMetadata: { ...prev.sheetMetadata, [sheetId]: result.metadata },
+        };
+      });
+      setError('');
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
   function grow(extraRows: number, extraColumns: number) {
     try {
-      setGrid(growPasteGrid(grid, grid.length + extraRows, grid[0].length + extraColumns));
+      const nextGrid = growPasteGrid(
+        grid,
+        grid.length + extraRows,
+        (grid[0]?.length ?? 3) + extraColumns,
+      );
+      patchSheet({ grid: nextGrid });
       setError('');
     } catch (e) {
       setError((e as Error).message);
@@ -103,6 +176,7 @@ export function PasteSpectraTable() {
     if (!result.value) return;
     const r = result.value;
     const nextBatch = new Map(batch.current);
+    const metadata = w.sheetMetadata?.[wb.activeId] ?? {};
     const spectra = r.spectra.map((s, i) => {
       const col = mapping.ys[i],
         key = rawColumnKey(col),
@@ -113,7 +187,7 @@ export function PasteSpectraTable() {
         ...(previous ?? s),
         // Store the name visible in the raw table; legend display still prefers 备注/名称.
         name: defaultTitle(col),
-        color: rawSpectrumColor(rawMetadata[key], colorAt(col)),
+        color: rawSpectrumColor(metadata[key], colorAt(col)),
         points: s.points,
         source: s.source,
         visible: mapping.ys.includes(col),
@@ -129,7 +203,9 @@ export function PasteSpectraTable() {
       const replacements = new Map(spectra.map((s) => [s.id, s]));
       const existing = new Set(prev.spectra.map((s) => s.id));
       return {
-        ...mergeImport(prev, { ...r, spectra: [] }, mapping.unit),
+        // Multi-sheet plot patches only touch this sheet's spectrum payload; the
+        // other pages (objects/calibration/gradient) are left untouched.
+        demo: false,
         spectra: prev.demo
           ? spectra
           : [
@@ -138,6 +214,7 @@ export function PasteSpectraTable() {
             ],
         rawSpectra: r.spectra.map((s, i) => ({ ...s, id: spectra[i].id })),
         rawColumnSpectra: { ...(prev.rawColumnSpectra ?? {}), ...columnSpectra },
+        rawSheet: { grid, mapping },
       };
     });
     batch.current = nextBatch;
@@ -173,8 +250,8 @@ export function PasteSpectraTable() {
           className="small-button"
           disabled={!rows.length}
           onClick={() => {
-            setGrid(emptyPasteGrid());
-            setMapping(suggestPasteMapping([], w.calUnit));
+            // Only the current sheet draft is cleared; plotted spectra stay.
+            update((prev) => ({ rawSheet: defaultRawSheet(prev.calUnit) }));
             setError('');
             setPlotted(false);
             batch.current = new Map();
@@ -256,10 +333,15 @@ export function PasteSpectraTable() {
         </button>
       </div>
       <Worksheet
-        sheetId="raw"
+        sheetId={wb.activeId}
         book="光谱工作台"
-        sheet={w.sheetNames?.raw ?? '原始光谱'}
-        onRenameSheet={(name) => update((prev) => ({ sheetNames: { ...prev.sheetNames, raw: name } }))}
+        sheet={wb.activeName}
+        sheetTabs={wb.tabs}
+        activeSheetId={wb.activeId}
+        onSelectSheet={wb.select}
+        onCreateSheet={wb.create}
+        onDeleteSheet={wb.remove}
+        onRenameSheet={wb.rename}
         columns={worksheetColumns}
         rows={grid}
         extraHeaderRow={{
@@ -287,23 +369,26 @@ export function PasteSpectraTable() {
           return pasteWorksheetRange(grid, cols, at, text);
         }}
         onChange={(next, change) => {
-          setGrid(
-            growPasteGrid(
-              next,
-              Math.max(6, next.length),
-              Math.max(3, next[0]?.length ?? grid[0].length),
-            ),
+          const nextGrid = growPasteGrid(
+            next,
+            Math.max(6, next.length),
+            Math.max(3, next[0]?.length ?? grid[0]?.length ?? 0),
           );
           if (
             change.kind === 'paste' &&
             (!rows.length ||
               (change.selection.anchor.row === 0 && change.selection.anchor.column === 0))
           ) {
-            updateMapping(suggestPasteMapping(next, w.calUnit));
+            // A paste at the top-left re-detects the columns and the start row.
+            updateMapping(suggestPasteMapping(next, w.calUnit), nextGrid);
+          } else {
+            patchSheet({ grid: nextGrid });
           }
           setError('');
         }}
         onAddColumn={() => grow(0, 1)}
+        onInsertRow={insertRow}
+        onInsertColumn={insertColumn}
         cellLabel={(row, col) => `原始数据第 ${row + 1} 行第 ${col + 1} 列`}
         invalidCell={(row, col) =>
           row >= mapping.start - 1 + (mapping.header ? 1 : 0) &&

@@ -1,34 +1,113 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Plus, Trash2, ChevronUp, ChevronDown, Upload } from 'lucide-react';
 import { useWorkspace } from '../state/workspace';
-import { roles, responses, uid, type Role, type ResponseMode } from '../domain/types';
+import { useWorkbook } from '../state/useWorkbook';
+import {
+  roles,
+  responses,
+  uid,
+  type ChartStyle,
+  type PlotData,
+  type ResponseMode,
+  type Role,
+} from '../domain/types';
 import { numeric, response, fmt, units } from '../domain/math';
+import {
+  PlotSheetBar,
+  SheetChartGallery,
+  type PlotViewMode,
+  type SheetGalleryChart,
+} from '../components/SheetPlotPanel-v0.5.5-2026.10.22';
 import { ChartPanel } from '../components/ChartPanel';
 import { ErrorNote, Field, Metric, SectionHead } from '../components/ui';
 import { WorkspaceWorksheet as Worksheet } from '../components/WorkspaceWorksheet-v0.3.1-2026.10.19';
 import type { WorksheetColumn } from '../domain/worksheet-v0.2.0-2026.10.19';
+import type { ScreeningSheetPayload } from '../domain/workbook';
 import { exportExcel } from '../services/download';
+
+interface ScreeningChartResult {
+  /** 与 objects 同序的响应值；计算失败时为空数组。 */
+  values: number[];
+  /** 空白参考强度 F₀；未指定/无效时为 NaN。 */
+  f0: number;
+  /** 分类柱状图数据；无对象或计算失败时为 null（画廊显示空状态）。 */
+  data: PlotData | null;
+  error: string;
+}
+
+/**
+ * 单个 sheet 的响应值与分类柱状图数据（纯函数）。
+ * 当前活动 sheet 的图表与「全部 sheet」画廊共用，保证两处计算一致；
+ * payload 来自该 sheet 的 ScreeningSheetPayload，不能读取其他 sheet 的顶层字段。
+ */
+function screeningChart(payload: ScreeningSheetPayload, style: ChartStyle): ScreeningChartResult {
+  try {
+    const blank = payload.objects.find((o) => o.id === payload.blankId),
+      f0 = numeric(blank?.intensity) ?? NaN;
+    const values = payload.objects.map((o) => {
+      const f = numeric(o.intensity);
+      if (!o.name.trim()) throw new Error('请填写所有分析对象的名称');
+      if (f === null) throw new Error(`${o.name} 的强度不是有效数值`);
+      return response(f, f0, payload.screenMode);
+    });
+    const data: PlotData | null = payload.objects.length
+      ? {
+          categories: payload.objects.map((o) => o.name),
+          series: payload.objects.map((o, i) => ({
+            name: o.name,
+            color:
+              o.role === 'target'
+                ? (style.secondaryColor ?? '#b6873f')
+                : o.id === payload.blankId
+                  ? '#a7b8b3'
+                  : (style.primaryColor ?? '#258873'),
+            kind: 'bar' as const,
+            points: [{ x: i, y: values[i] }],
+          })),
+        }
+      : null;
+    return { values, f0, data, error: '' };
+  } catch (e) {
+    return { values: [], f0: NaN, data: null, error: (e as Error).message };
+  }
+}
+
 export function Screening({ onImport }: { onImport: () => void }) {
   const { w, update, notify } = useWorkspace();
-  const result = useMemo(() => {
-    try {
-      const blank = w.objects.find((o) => o.id === w.blankId),
-        f0 = numeric(blank?.intensity) ?? NaN;
-      const values = w.objects.map((o) => {
-        const f = numeric(o.intensity);
-        if (!o.name.trim()) throw new Error('请填写所有分析对象的名称');
-        if (f === null) throw new Error(`${o.name} 的强度不是有效数值`);
-        return response(f, f0, w.screenMode);
-      });
-      return { values, f0, error: '' };
-    } catch (e) {
-      return { values: [], f0: NaN, error: (e as Error).message };
-    }
-  }, [w.objects, w.blankId, w.screenMode]);
+  const wb = useWorkbook('screening');
+  const [viewMode, setViewMode] = useState<PlotViewMode>('active');
+  const result = useMemo(
+    () =>
+      screeningChart(
+        { objects: w.objects, blankId: w.blankId, screenMode: w.screenMode },
+        w.styles.screening,
+      ),
+    [w.objects, w.blankId, w.screenMode, w.styles.screening],
+  );
+  // 「全部 sheet」画廊：逐 sheet 用同一纯函数计算，未激活 sheet 的数据来自 store。
+  const charts: SheetGalleryChart[] = wb.snapshots.map(({ tab, payload }) => {
+    const chart = screeningChart(payload as ScreeningSheetPayload, w.styles.screening);
+    return { id: tab.id, name: tab.name, data: chart.data, error: chart.error || undefined };
+  });
   function move(from: number, to: number) {
     if (to < 0 || to >= w.objects.length) return;
     const rows = [...w.objects];
     rows.splice(to, 0, rows.splice(from, 1)[0]);
+    update({ objects: rows });
+  }
+  /** Insert a blank object row at any position (arbitrary-position row insertion). */
+  function insertObject(index: number) {
+    const rows = [...w.objects];
+    const at = Math.max(0, Math.min(index, rows.length));
+    rows.splice(at, 0, {
+      id: uid(),
+      name: `对象 ${w.objects.length + 1}`,
+      role: 'other',
+      concentration: '',
+      unit: w.objects[0]?.unit ?? 'µmol/L',
+      intensity: '',
+      notes: '',
+    });
     update({ objects: rows });
   }
   const targets = w.objects.filter((o) => o.role === 'target');
@@ -71,27 +150,35 @@ export function Screening({ onImport }: { onImport: () => void }) {
         </div>
       </div>
       {result.error && <ErrorNote>{result.error}</ErrorNote>}
-      <ChartPanel
-        kind="screening"
-        title="分析对象筛选"
-        subtitle={`${responses[w.screenMode]} · ${w.objects.length} 个对象`}
-        data={{
-          categories: w.objects.map((o) => o.name),
-          series: result.error
-            ? []
-            : w.objects.map((o, i) => ({
-                name: o.name,
-                color:
-                  o.role === 'target'
-                    ? (w.styles.screening.secondaryColor ?? '#b6873f')
-                    : o.id === w.blankId
-                      ? '#a7b8b3'
-                      : (w.styles.screening.primaryColor ?? '#258873'),
-                kind: 'bar' as const,
-                points: [{ x: i, y: result.values[i] }],
-              })),
-        }}
+      <PlotSheetBar
+        tabs={wb.tabs}
+        activeId={wb.activeId}
+        onSelect={wb.select}
+        mode={viewMode}
+        onModeChange={setViewMode}
       />
+      {viewMode === 'all' ? (
+        <SheetChartGallery
+          charts={charts}
+          style={w.styles.screening}
+          onSelect={(id) => {
+            wb.select(id);
+            setViewMode('active');
+          }}
+        />
+      ) : (
+        <ChartPanel
+          kind="screening"
+          title="分析对象筛选"
+          subtitle={`${wb.activeName} · ${responses[w.screenMode]} · ${w.objects.length} 个对象`}
+          data={
+            result.data ?? {
+              categories: w.objects.map((o) => o.name),
+              series: [],
+            }
+          }
+        />
+      )}
       <div className="metrics-row three">
         <Metric label="分析对象" value={String(w.objects.length)} unit="组" />
         <Metric label="空白强度 F₀" value={fmt(result.f0, 6)} unit="a.u." />
@@ -133,11 +220,17 @@ export function Screening({ onImport }: { onImport: () => void }) {
           }
         />
         <Worksheet
-          sheetId="screening"
+          sheetId={wb.activeId}
           book="对象筛选"
-          sheet={w.sheetNames?.screening ?? '分析对象'}
-          onRenameSheet={(name) => update((prev) => ({ sheetNames: { ...prev.sheetNames, screening: name } }))}
+          sheet={wb.activeName}
+          onRenameSheet={wb.rename}
+          sheetTabs={wb.tabs}
+          activeSheetId={wb.activeId}
+          onSelectSheet={wb.select}
+          onCreateSheet={wb.create}
+          onDeleteSheet={wb.remove}
           onMoveRow={move}
+          onInsertRow={insertObject}
           minRows={Math.max(1, w.objects.length)}
           columns={
             [

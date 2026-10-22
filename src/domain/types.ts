@@ -158,3 +158,29 @@ export const defaultStyle = (kind: 'spectra' | 'screening' | 'calibration'): Cha
   widthCm: 16,
   dpi: 300,
 });
+
+// ---- Workbook model shared by all four table areas (v0.5.5) ----
+export type ImportKind = 'wide' | 'long' | 'objects' | 'calibration';
+export interface SheetMapping {
+  kind: ImportKind;
+  start: number;
+  header: boolean;
+  x: number;
+  ys: number[];
+  name: number;
+  concentration: number;
+  unit: string;
+}
+export interface GradientSettings {
+  stock: string;
+  volume: string;
+  fixed: string;
+  targets: string;
+  unit: string;
+  targetUnit?: string;
+}
+export type WorkbookId = 'raw' | 'screening' | 'calibration' | 'gradient';
+export interface WorkbookTab {
+  id: string;
+  name: string;
+}

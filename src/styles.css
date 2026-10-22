@@ -1942,3 +1942,155 @@ table,
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* v0.5.5 · 绘图区 sheet 标签栏与「全部 sheet」图表画廊 */
+.plot-sheet-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 10px;
+  margin-bottom: 14px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.plot-sheet-tabs {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 3px;
+  border-radius: 8px;
+  background: #f1f5f2;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+.plot-sheet-tab {
+  display: block;
+  flex: 0 0 auto;
+  max-width: 210px;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #829086;
+  font-size: 0.8rem;
+  line-height: 1.3;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plot-sheet-tab:hover:not(:disabled) {
+  background: #e7efe9;
+  border-color: transparent;
+}
+.plot-sheet-tab.selected,
+.plot-sheet-tab.selected:hover:not(:disabled) {
+  background: #fff;
+  color: #2b5540;
+  font-weight: 600;
+  box-shadow: 0 1px 4px #142f2910;
+}
+.plot-view-toggle {
+  flex-shrink: 0;
+}
+.plot-view-toggle button {
+  padding: 6px 10px;
+  font-size: 0.75rem;
+}
+.sheet-gallery {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  min-width: 0;
+}
+.sheet-gallery > .empty {
+  grid-column: 1 / -1;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.sheet-gallery-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.sheet-gallery-card:hover {
+  border-color: #cbdcd1;
+  box-shadow: 0 2px 10px #142f290d;
+}
+.sheet-gallery-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 16px;
+  border-bottom: 1px solid #edf1ee;
+}
+.sheet-gallery-head h3 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: #344d44;
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.sheet-gallery-view {
+  flex-shrink: 0;
+}
+.sheet-gallery-chart {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 10px 12px 12px;
+  overflow: hidden;
+}
+.sheet-gallery-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.sheet-gallery-chart .empty {
+  padding: 34px 16px;
+}
+@media (max-width: 760px) {
+  .plot-sheet-bar {
+    gap: 8px;
+    padding: 7px 8px;
+  }
+  .plot-sheet-tabs {
+    padding: 2px;
+  }
+  .plot-sheet-tab {
+    max-width: 150px;
+    padding: 6px 11px;
+    font-size: 0.75rem;
+  }
+  .plot-view-toggle button {
+    padding: 6px 9px;
+    font-size: 0.72rem;
+  }
+  .sheet-gallery {
+    grid-template-columns: 1fr;
+    gap: 13px;
+  }
+  .sheet-gallery-head {
+    padding: 11px 13px;
+  }
+  .sheet-gallery-chart {
+    padding: 8px 10px 10px;
+  }
+}

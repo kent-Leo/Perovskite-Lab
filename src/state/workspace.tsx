@@ -11,13 +11,20 @@ import {
   type ColumnMetadata,
   type ResponseMode,
 } from '../domain/types';
+import {
+  DEFAULT_SHEET_NAMES,
+  defaultPayload,
+  defaultRawSheet,
+  emptyWorkbooks,
+  ensureWorkbooks,
+  type CalibrationSheetPayload,
+  type GradientSheetPayload,
+  type WorkbookHost,
+} from '../domain/workbook';
 export type WorksheetId = 'raw' | 'samples' | 'screening' | 'calibration' | 'gradient';
-export interface Workspace {
-  sheetMetadata?: Partial<Record<WorksheetId, Record<string, ColumnMetadata>>>;
-  sheetNames?: Partial<Record<WorksheetId, string>>;
-  // Raw-table column key (raw-1, raw-2…) to the plotted spectrum id.
-  rawColumnSpectra?: Record<string, string>;
-  excitation?: string;
+export interface Workspace extends WorkbookHost {
+  // Column header metadata keyed by sheet id ('raw', 'screening', new sheet ids…).
+  sheetMetadata?: Partial<Record<string, Record<string, ColumnMetadata>>>;
   version: 1;
   demo: boolean;
   spectra: Spectrum[];
@@ -37,7 +44,6 @@ export interface Workspace {
   lodFactor: 3 | 3.3;
   fitMin: string;
   fitMax: string;
-  gradient: { stock: string; volume: string; fixed: string; targets: string; unit: string; targetUnit?: string };
 }
 export function demoWorkspace(): Workspace {
   const names = ['Blank', 'Sample A', 'Sample B', 'Sample C', 'Sample D', 'Sample E'];
@@ -83,6 +89,7 @@ export function demoWorkspace(): Workspace {
     spectra,
     rawSpectra: spectra,
     rawColumnSpectra: {},
+    rawSheet: defaultRawSheet(),
     excitation: '450',
     objects,
     calibration: concentrations.map((c, i) => ({
@@ -115,6 +122,46 @@ export function demoWorkspace(): Workspace {
       unit: 'µmol/L',
       targetUnit: 'µmol/L',
     },
+    workbooks: emptyWorkbooks(),
+    sheetNames: { ...DEFAULT_SHEET_NAMES },
+    sheetMetadata: {},
+  };
+}
+/** A blank workspace: every page keeps one empty sheet (v0.5.5 "新建空白工作区"). */
+export function blankWorkspace(): Workspace {
+  const calUnit = 'µmol/L';
+  const cal = defaultPayload('calibration', calUnit) as CalibrationSheetPayload,
+    gradient = defaultPayload('gradient', calUnit) as GradientSheetPayload;
+  return {
+    version: 1,
+    demo: false,
+    spectra: [],
+    rawSpectra: [],
+    rawColumnSpectra: {},
+    rawSheet: defaultRawSheet(calUnit),
+    excitation: '',
+    objects: [],
+    blankId: '',
+    calibration: [],
+    styles: {
+      spectra: defaultStyle('spectra'),
+      screening: defaultStyle('screening'),
+      calibration: defaultStyle('calibration'),
+    },
+    screenMode: 'ratio',
+    calMode: cal.calMode,
+    calUnit: cal.calUnit,
+    calF0: '',
+    blankRepeats: '',
+    manualSigma: '',
+    sigmaSource: 'replicates',
+    lodFactor: 3.3,
+    fitMin: '',
+    fitMax: '',
+    gradient: gradient.gradient,
+    workbooks: emptyWorkbooks(),
+    sheetNames: { ...DEFAULT_SHEET_NAMES },
+    sheetMetadata: {},
   };
 }
 export function normalizeWorkspaceUnits(w: Workspace): Workspace {
@@ -126,6 +173,15 @@ export function normalizeWorkspaceUnits(w: Workspace): Workspace {
     ...w,
     excitation: w.excitation ?? '',
     rawColumnSpectra: w.rawColumnSpectra ?? {},
+    rawSheet: w.rawSheet
+      ? {
+          ...w.rawSheet,
+          mapping: {
+            ...w.rawSheet.mapping,
+            unit: normalizeConcentrationUnit(w.rawSheet.mapping.unit),
+          },
+        }
+      : w.rawSheet,
     spectra: w.spectra.map((s) => ({ ...s, unit: normalizeConcentrationUnit(s.unit) })),
     objects: w.objects.map((s) => ({ ...s, unit: normalizeConcentrationUnit(s.unit) })),
     calUnit: normalizeConcentrationUnit(w.calUnit),
@@ -141,7 +197,7 @@ export function normalizeWorkspaceUnits(w: Workspace): Workspace {
       )),
     }])) as Workspace['styles'],
     sheetMetadata: w.sheetMetadata && Object.fromEntries(Object.entries(w.sheetMetadata).map(
-      ([sheet, columns]) => [sheet, Object.fromEntries(Object.entries(columns).map(
+      ([sheet, columns]) => [sheet, Object.fromEntries(Object.entries(columns ?? {}).map(
         ([key, metadata]) => [key, { ...metadata, ...(metadata.unit === undefined ? {} : {
           unit: normalizeConcentrationUnit(metadata.unit),
         }) }],
@@ -163,12 +219,12 @@ function load(): Workspace {
         w.styles &&
         w.gradient
       )
-        return normalizeWorkspaceUnits(w);
+        return ensureWorkbooks(normalizeWorkspaceUnits(w));
     }
   } catch {
     /* recover corrupt storage */
   }
-  return demoWorkspace();
+  return ensureWorkbooks(demoWorkspace());
 }
 type ContextValue = {
   w: Workspace;
@@ -184,7 +240,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [notice, setNotice] = useState('');
   const update = useCallback(
     (patch: Partial<Workspace> | ((w: Workspace) => Partial<Workspace>)) => {
-      setW((prev) => ({ ...prev, ...(typeof patch === 'function' ? patch(prev) : patch) }));
+      setW((prev) =>
+        ensureWorkbooks({
+          ...prev,
+          ...(typeof patch === 'function' ? patch(prev) : patch),
+        }),
+      );
     },
     [],
   );

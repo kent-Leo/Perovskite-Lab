@@ -1,60 +1,121 @@
 import { useMemo, useState } from 'react';
 import { useWorkspace } from '../state/workspace';
+import { useWorkbook } from '../state/useWorkbook';
 import { spectrumStats, numeric, fmt } from '../domain/math';
 import { peakMetrics } from '../domain/peak';
+import type { ColumnMetadata, PlotData, Series, Spectrum } from '../domain/types';
+import type { RawSheetPayload } from '../domain/workbook';
 import { rawColumnIndex, rawColumnKey, rawSpectrumColor, rawSpectrumLabel } from '../domain/raw-spectra';
 import { ChartPanel } from '../components/ChartPanel';
+import {
+  PlotSheetBar,
+  SheetChartGallery,
+  type PlotViewMode,
+  type SheetGalleryChart,
+} from '../components/SheetPlotPanel-v0.5.5-2026.10.22';
 import { ErrorNote, Field, Metric, SectionHead } from '../components/ui';
 import { exportExcel } from '../services/download';
+
+/**
+ * Plot points come from the last confirmed raw table/import of one sheet, while
+ * labels, colors and visibility are read from that sheet's column metadata.
+ */
+function sheetRawSpectra(
+  spectra: Spectrum[],
+  rawSpectra: Spectrum[] | undefined,
+  rawColumnSpectra: Record<string, string> | undefined,
+  metadata: Record<string, ColumnMetadata> | undefined,
+): Spectrum[] {
+  const points = new Map((rawSpectra ?? spectra).map((s) => [s.id, s.points]));
+  const columns = new Map(
+    Object.entries(rawColumnSpectra ?? {}).flatMap(([key, id]) => {
+      const column = rawColumnIndex(key);
+      return column === null ? [] : [[id, column] as const];
+    }),
+  );
+  return spectra.flatMap((sample) => {
+    const raw = points.get(sample.id);
+    if (!raw) return [];
+    const column = columns.get(sample.id);
+    const meta = column === undefined ? undefined : metadata?.[rawColumnKey(column)];
+    return [
+      {
+        ...sample,
+        name: rawSpectrumLabel(meta, sample.name),
+        color: rawSpectrumColor(meta, sample.color),
+        points: raw,
+      },
+    ];
+  });
+}
+
+/** Series of the shown spectra; an empty list becomes an empty chart. */
+function plotSeries(
+  spectra: Spectrum[],
+  normalize: boolean,
+): { data: PlotData | null; error: string } {
+  if (!spectra.length) return { data: null, error: '' };
+  const invalid = spectra.filter((s) => {
+    const stats = normalize ? spectrumStats(s.points) : null;
+    return normalize && (!stats || !(stats.max > 0));
+  });
+  if (invalid.length)
+    return {
+      data: null,
+      error: '最大强度非正，无法归一化：' + invalid.map((s) => s.name).join('、'),
+    };
+  const series: Series[] = spectra.map((s) => {
+    const max = normalize ? (spectrumStats(s.points)?.max ?? 1) : 1;
+    return {
+      name: s.name,
+      color: s.color,
+      points: s.points.map((p) => ({ x: p.x, y: p.y / max })),
+    };
+  });
+  return { data: { series }, error: '' };
+}
+
 export function Spectra() {
   const { w, update, notify } = useWorkspace(),
+    wb = useWorkbook('raw'),
     [normalize, setNormalize] = useState(false),
     [single, setSingle] = useState(false),
+    [viewMode, setViewMode] = useState<PlotViewMode>('active'),
     [selected, setSelected] = useState(w.spectra[0]?.id ?? '');
-  const rawSpectra = useMemo(() => {
-    const points = new Map((w.rawSpectra ?? w.spectra).map((s) => [s.id, s.points]));
-    const columns = new Map(
-      Object.entries(w.rawColumnSpectra ?? {}).flatMap(([key, id]) => {
-        const column = rawColumnIndex(key);
-        return column === null ? [] : [[id, column] as const];
-      }),
-    );
-    const metadata = w.sheetMetadata?.raw ?? {};
-    return w.spectra.flatMap((sample) => {
-      const raw = points.get(sample.id);
-      if (!raw) return [];
-      const column = columns.get(sample.id);
-      const meta = column === undefined ? undefined : metadata[rawColumnKey(column)];
-      return [
-        {
-          ...sample,
-          name: rawSpectrumLabel(meta, sample.name),
-          color: rawSpectrumColor(meta, sample.color),
-          points: raw,
-        },
-      ];
-    });
-  }, [w.rawSpectra, w.spectra, w.sheetMetadata, w.rawColumnSpectra]);
+  const rawSpectra = useMemo(
+    () =>
+      sheetRawSpectra(
+        w.spectra,
+        w.rawSpectra,
+        w.rawColumnSpectra,
+        w.sheetMetadata?.[wb.activeId],
+      ),
+    [w.rawSpectra, w.spectra, w.sheetMetadata, w.rawColumnSpectra, wb.activeId],
+  );
   const active = rawSpectra.find((s) => s.id === selected) ?? rawSpectra[0],
     shown = single ? (active ? [active] : []) : rawSpectra.filter((s) => s.visible);
-  const chart = useMemo(() => {
-    const invalid = shown.filter((s) => normalize && spectrumStats(s.points)!.max <= 0);
-    return {
-      error: invalid.length
-        ? '最大强度非正，无法归一化：' + invalid.map((s) => s.name).join('、')
-        : '',
-      series: invalid.length
-        ? []
-        : shown.map((s) => {
-            const max = normalize ? spectrumStats(s.points)!.max : 1;
-            return {
-              name: s.name,
-              color: s.color,
-              points: s.points.map((p) => ({ x: p.x, y: p.y / max })),
-            };
-          }),
-    };
-  }, [shown, normalize]);
+  const chart = useMemo(() => plotSeries(shown, normalize), [shown, normalize]);
+  // One tile per sheet for the "all sheets" view; each sheet uses its own payload
+  // and its own column metadata, never the active sheet's top-level fields.
+  const galleryCharts = useMemo<SheetGalleryChart[]>(
+    () =>
+      wb.snapshots.map(({ tab, payload }) => {
+        try {
+          const raw = payload as RawSheetPayload;
+          const spectra = sheetRawSpectra(
+            raw.spectra ?? [],
+            raw.rawSpectra,
+            raw.rawColumnSpectra,
+            w.sheetMetadata?.[tab.id],
+          );
+          const result = plotSeries(spectra.filter((s) => s.visible), normalize);
+          return { id: tab.id, name: tab.name, data: result.data, error: result.error };
+        } catch (e) {
+          return { id: tab.id, name: tab.name, data: null, error: (e as Error).message };
+        }
+      }),
+    [wb.snapshots, w.sheetMetadata, normalize],
+  );
   const excitation = w.excitation ?? '',
     excitationValue = numeric(excitation),
     metrics = active ? peakMetrics(active.points, excitation) : null,
@@ -117,12 +178,34 @@ export function Spectra() {
           {shown.length} 条曲线 · {shown.reduce((n, s) => n + s.points.length, 0)} 个数据点
         </span>
       </div>
-      <ChartPanel
-        kind="spectra"
-        data={{ series: chart.series }}
-        title="荧光光谱"
-        subtitle={normalize ? '按各曲线最大值归一化' : '原始光谱数据 · 发射光谱'}
+      <PlotSheetBar
+        tabs={wb.tabs}
+        activeId={wb.activeId}
+        onSelect={wb.select}
+        mode={viewMode}
+        onModeChange={setViewMode}
       />
+      {viewMode === 'all' ? (
+        <SheetChartGallery
+          charts={galleryCharts}
+          style={w.styles.spectra}
+          onSelect={(id) => {
+            wb.select(id);
+            setViewMode('active');
+          }}
+        />
+      ) : (
+        <ChartPanel
+          kind="spectra"
+          data={chart.data ?? { series: [] }}
+          title="荧光光谱"
+          subtitle={
+            normalize
+              ? `${wb.activeName} · 按各曲线最大值归一化`
+              : `${wb.activeName} · 原始光谱数据 · 发射光谱`
+          }
+        />
+      )}
       {chart.error && <ErrorNote>{chart.error}</ErrorNote>}
       <section className="peak-panel" aria-labelledby="peak-title">
         <SectionHead
