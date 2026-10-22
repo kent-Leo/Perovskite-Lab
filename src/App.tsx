@@ -1,4 +1,4 @@
-import { APP_VERSION } from './version-v0.4.5-2026.10.22';
+import { APP_VERSION } from './version-v0.5.5-2026.10.22';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity,
@@ -19,7 +19,7 @@ import {
   Menu,
   X,
 } from 'lucide-react';
-import { useWorkspace, demoWorkspace } from './state/workspace';
+import { useWorkspace, demoWorkspace, blankWorkspace } from './state/workspace';
 import { Spectra } from './features/Spectra';
 import { Screening } from './features/Screening';
 import { Calibration } from './features/Calibration';
@@ -92,17 +92,7 @@ export default function App() {
   }
   function clearWorkspace() {
     if (!window.confirm('清空当前工作区？已下载的文件不会受影响。')) return;
-    update({
-      ...demoWorkspace(),
-      demo: false,
-      spectra: [],
-      rawSpectra: [],
-      objects: [],
-      calibration: [],
-      blankId: '',
-      calF0: '',
-      blankRepeats: '',
-    });
+    update(blankWorkspace());
     notify('已建立空白工作区');
   }
   function template() {

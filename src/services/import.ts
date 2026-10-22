@@ -8,6 +8,8 @@ import {
   type ObjectRow,
   type CalibrationRow,
   type Point,
+  type ImportKind,
+  type SheetMapping,
 } from '../domain/types';
 export interface SheetTable {
   name: string;
@@ -17,17 +19,9 @@ export interface ImportFile {
   name: string;
   sheets: SheetTable[];
 }
-export type ImportKind = 'wide' | 'long' | 'objects' | 'calibration';
-export interface Mapping {
-  kind: ImportKind;
-  start: number;
-  header: boolean;
-  x: number;
-  ys: number[];
-  name: number;
-  concentration: number;
-  unit: string;
-}
+export type { ImportKind };
+/** Column mapping of a wide/long table; persisted with the raw workbook sheet. */
+export type Mapping = SheetMapping;
 function parseText(text: string, delimiter: string) {
   if (delimiter === 'space')
     return {

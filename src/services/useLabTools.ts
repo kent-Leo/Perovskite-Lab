@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { useWorkspace } from '../state/workspace';
+import { activeSheetIdOf } from '../domain/workbook';
 import { concentrationGradient, units, normalizeConcentrationUnit } from '../domain/math';
 interface BrowserTool {
   name: string;
@@ -101,22 +102,28 @@ export function useLabTools() {
         const targetUnit = normalizeConcentrationUnit((p.targetUnit as string | undefined) ?? p.unit);
         const plan = concentrationGradient(p.stock, unit, p.volumeML, p.targets as number[], targetUnit, p.fixedML);
         flushSync(() =>
-          update((prev) => ({
-            sheetMetadata: {
-              ...prev.sheetMetadata,
-              gradient: { ...prev.sheetMetadata?.gradient, target: {
-                ...prev.sheetMetadata?.gradient?.target, unit: targetUnit,
-              } },
-            },
-            gradient: {
-              stock: String(p.stock),
-              volume: String(p.volumeML),
-              fixed: String(p.fixedML),
-              targets: p.targets!.toString(),
-              unit,
-              targetUnit,
-            },
-          })),
+          update((prev) => {
+            // 列头单位元数据按 sheet 存放：写入当前活动 gradient sheet。
+            const sheetId = activeSheetIdOf(prev, 'gradient'),
+              metadata = prev.sheetMetadata?.[sheetId];
+            return {
+              sheetMetadata: {
+                ...prev.sheetMetadata,
+                [sheetId]: {
+                  ...metadata,
+                  target: { ...metadata?.target, unit: targetUnit },
+                },
+              },
+              gradient: {
+                stock: String(p.stock),
+                volume: String(p.volumeML),
+                fixed: String(p.fixedML),
+                targets: p.targets!.toString(),
+                unit,
+                targetUnit,
+              },
+            };
+          }),
         );
         return { groups: plan.length, unit: targetUnit, stockUnit: unit, plan };
       },

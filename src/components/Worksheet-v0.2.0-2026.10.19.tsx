@@ -8,7 +8,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from 'react';
-import { Table2, Copy, ClipboardPaste, Plus, Undo2, Redo2, Pencil } from 'lucide-react';
+import { Table2, Copy, ClipboardPaste, Plus, Undo2, Redo2, Pencil, Trash2 } from 'lucide-react';
 import { fmt, numeric } from '../domain/math';
 import {
   WORKSHEET_VERSION,
@@ -35,10 +35,17 @@ export type WorksheetChange = {
   kind: 'edit' | 'paste' | 'clear' | 'undo' | 'redo';
   selection: CellSelection;
 };
+export type WorksheetSheetTab = { id: string; name: string };
 export type WorksheetProps = {
   book: string;
   sheet: string;
   onRenameSheet?: (name: string) => void;
+  // Multi-sheet tab bar: only rendered when sheetTabs + onSelectSheet are provided.
+  sheetTabs?: WorksheetSheetTab[];
+  activeSheetId?: string;
+  onSelectSheet?: (id: string) => void;
+  onCreateSheet?: () => void;
+  onDeleteSheet?: (id: string) => void;
   columns: WorksheetColumn[];
   rows: string[][];
   onChange?: (rows: string[][], change: WorksheetChange) => void;
@@ -49,6 +56,9 @@ export type WorksheetProps = {
   onMoveRow?: (from: number, to: number) => void;
   onMetadataChange?: (column: number, field: 'title' | 'unit' | 'comment', value: string) => void;
   onAddColumn?: () => void;
+  // Insert a row above / a column to the left of the active cell (0-based position).
+  onInsertRow?: (row: number) => void;
+  onInsertColumn?: (column: number) => void;
   cellLabel?: (row: number, column: number) => string;
   invalidCell?: (row: number, column: number) => boolean;
   renderCell?: (row: number, column: number) => ReactNode | undefined;
@@ -62,6 +72,11 @@ export function Worksheet({
   book,
   sheet,
   onRenameSheet,
+  sheetTabs,
+  activeSheetId,
+  onSelectSheet,
+  onCreateSheet,
+  onDeleteSheet,
   columns,
   rows,
   onChange,
@@ -72,18 +87,38 @@ export function Worksheet({
   onMoveRow,
   onMetadataChange,
   onAddColumn,
+  onInsertRow,
+  onInsertColumn,
   cellLabel,
   invalidCell,
   renderCell,
   extraHeaderRow,
   minRows = 6,
 }: WorksheetProps) {
+  const tabs = sheetTabs ?? [];
+  // The tab bar replaces the legacy single tab only when it can actually switch sheets.
+  const multiSheet = tabs.length > 0 && !!onSelectSheet;
+  const activeTab = multiSheet
+    ? (tabs.find((tab) => tab.id === activeSheetId) ?? tabs[0])
+    : undefined;
+  const activeTabId = activeTab?.id;
+  // In tab mode the visible/active sheet comes from the tab list; the sheet prop stays the fallback.
+  const activeSheet = activeTab?.name ?? sheet;
   const [renaming, setRenaming] = useState(false),
     [sheetDraft, setSheetDraft] = useState(sheet),
     [sheetError, setSheetError] = useState('');
-  const renameActive = useRef(false);
+  const renameActive = useRef(false),
+    lastActiveTab = useRef(activeTabId);
+  useEffect(() => {
+    // Switching the active sheet abandons an uncommitted rename of the previous sheet.
+    if (lastActiveTab.current === activeTabId) return;
+    lastActiveTab.current = activeTabId;
+    renameActive.current = false;
+    setRenaming(false);
+    setSheetError('');
+  }, [activeTabId]);
   function startRename() {
-    setSheetDraft(sheet);
+    setSheetDraft(activeSheet);
     setSheetError('');
     renameActive.current = true;
     setRenaming(true);
@@ -112,6 +147,8 @@ export function Worksheet({
   const [capacity, setCapacity] = useState(minRows),
     [editing, setEditing] = useState(false),
     [message, setMessage] = useState('');
+  // Bumped to re-focus the active cell after toolbar actions that change rows/columns.
+  const [focusRequest, setFocusRequest] = useState(0);
   const [historyCounts, setHistoryCounts] = useState({ past: 0, future: 0 });
   const history = useRef<{ past: string[][][]; future: string[][][]; expected: string | null }>({
     past: [],
@@ -220,6 +257,27 @@ export function Worksheet({
     setEditing(false);
     pendingFocus.current = next;
   }
+  /** Enter edit mode with the caret after the current text (collapsing a select-all). */
+  function editAtEnd(input: HTMLInputElement) {
+    const end = input.value.length;
+    input.setSelectionRange(end, end);
+    setEditing(true);
+  }
+  function insertAt(kind: 'row' | 'column') {
+    const at = selection.focus;
+    try {
+      if (kind === 'row') onInsertRow?.(at.row);
+      else onInsertColumn?.(at.column);
+    } catch (e) {
+      setMessage((e as Error).message);
+      return;
+    }
+    // The active cell keeps its coordinates: they now point at the new blank row/column.
+    setEditing(false);
+    setMessage('');
+    pendingFocus.current = { ...at };
+    setFocusRequest((n) => n + 1);
+  }
   useLayoutEffect(() => {
     const at = pendingFocus.current;
     if (!at) return;
@@ -228,7 +286,7 @@ export function Worksheet({
     (cell?.querySelector<HTMLElement>('input, select') ?? cell)?.focus();
     navigating.current = false;
     pendingFocus.current = null;
-  }, [selection]);
+  }, [selection, focusRequest]);
 
   function pasteMetadata(
     e: ClipboardEvent<HTMLInputElement>,
@@ -288,6 +346,7 @@ export function Worksheet({
   }
   function keyboard(e: KeyboardEvent<HTMLDivElement>) {
     if (!(e.target as HTMLElement).closest('[data-cell]') || !columns.length) return;
+    if (e.nativeEvent.isComposing) return;
     const command = e.ctrlKey || e.metaKey,
       key = e.key.toLowerCase(),
       b = selectionBounds(selection),
@@ -309,12 +368,48 @@ export function Worksheet({
     }
     if (e.key === 'F2') {
       e.preventDefault();
-      setEditing(true);
+      const target = e.target as HTMLElement;
+      setSelection((s) => ({ anchor: s.focus, focus: s.focus }));
+      if (target instanceof HTMLInputElement && target.type === 'text') editAtEnd(target);
+      else setEditing(true);
       return;
     }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && (!editing || multiple)) {
+    // Multi-cell selections keep Excel semantics for both erase keys.
+    if (multiple && (e.key === 'Delete' || e.key === 'Backspace')) {
       e.preventDefault();
       clear();
+      return;
+    }
+    if (!editing && e.key === 'Delete') {
+      e.preventDefault();
+      clear();
+      return;
+    }
+    if (!editing && e.key === 'Backspace') {
+      const target = e.target as HTMLElement;
+      const input =
+        target instanceof HTMLInputElement && target.type === 'text'
+          ? target
+          : (root.current?.querySelector<HTMLInputElement>(
+              `[data-cell="${selection.focus.row}:${selection.focus.column}"] input[type="text"]`,
+            ) ?? null);
+      if (!input) {
+        e.preventDefault();
+        clear();
+        return;
+      }
+      if (target !== input) {
+        // Focus sits on the cell rather than on its input: erase one character at the end.
+        e.preventDefault();
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+        edit(selection.focus, input.value.slice(0, -1));
+        return;
+      }
+      // Navigation-mode Backspace: collapse a select-all to the caret end, then let the
+      // browser erase one character. Stay in navigation mode so arrows keep moving cells.
+      if (input.selectionStart !== input.selectionEnd)
+        input.setSelectionRange(input.value.length, input.value.length);
       return;
     }
     const at = selection.focus;
@@ -353,11 +448,40 @@ export function Worksheet({
   const focus = selection.focus,
     activeColumn = columns[focus.column],
     activeValue = data[focus.row]?.[focus.column] ?? '';
+  // Shared between the legacy single tab and the active tab of the multi-sheet bar.
+  const renameInput = (
+    <input
+      className="worksheet-sheet-name"
+      aria-label="工作表标签名"
+      aria-invalid={!!sheetError}
+      value={sheetDraft}
+      maxLength={40}
+      autoFocus
+      onFocus={(e) => e.target.select()}
+      onChange={(e) => {
+        setSheetDraft(e.target.value);
+        setSheetError('');
+      }}
+      onBlur={finishRename}
+      onKeyDown={(e) => {
+        if (e.nativeEvent.isComposing) return;
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          finishRename();
+        }
+        if (e.key === 'Escape') {
+          renameActive.current = false;
+          setRenaming(false);
+          setSheetError('');
+        }
+      }}
+    />
+  );
   return (
     <div
       className="worksheet"
       ref={root}
-      aria-label={`${book} ${sheet} 工作表`}
+      aria-label={`${book} ${activeSheet} 工作表`}
       onKeyDown={keyboard}
       onCopy={(e) => clipboard(e)}
       onCut={(e) => clipboard(e, true)}
@@ -367,7 +491,7 @@ export function Worksheet({
           <Table2 size={15} />
           {book}
           <b>/</b>
-          {sheet}
+          {activeSheet}
         </span>
         <span>
           Worksheet v{WORKSHEET_VERSION} · {onChange ? '可编辑工作表' : '只读结果表'}
@@ -450,6 +574,27 @@ export function Worksheet({
             <Plus size={14} />列
           </button>
         )}
+        {(onInsertRow || onInsertColumn) && <span className="worksheet-separator" />}
+        {onInsertRow && (
+          <button
+            type="button"
+            aria-label="插入行"
+            title="在选中行上方插入一行"
+            onClick={() => insertAt('row')}
+          >
+            <Plus size={14} />插入行
+          </button>
+        )}
+        {onInsertColumn && (
+          <button
+            type="button"
+            aria-label="插入列"
+            title="在选中列左侧插入一列"
+            onClick={() => insertAt('column')}
+          >
+            <Plus size={14} />插入列
+          </button>
+        )}
       </div>
       <div className="worksheet-formula">
         <output aria-label="工作表当前选区">{selectionName(selection)}</output>
@@ -464,7 +609,7 @@ export function Worksheet({
       <div className="worksheet-scroll" tabIndex={0} aria-label="工作表数据区域，可横向和纵向连续滚动">
         <table
           role="grid"
-          aria-label={`${sheet} 数据表`}
+          aria-label={`${activeSheet} 数据表`}
           aria-rowcount={height + 4 + (extraHeaderRow ? 1 : 0)}
           aria-colcount={columns.length + 1}
         >
@@ -511,7 +656,7 @@ export function Worksheet({
                   <td key={col.key}>
                     {onMetadataChange ? (
                       <input
-                        aria-label={`${sheet} 第 ${c + 1} 列${['名称', '单位', '备注'][i]}`}
+                        aria-label={`${activeSheet} 第 ${c + 1} 列${['名称', '单位', '备注'][i]}`}
                         title="单击全选；可粘贴一行或多行单列值，按列横向填入"
                         value={col[field] ?? ''}
                         onChange={(e) => onMetadataChange(c, field, e.target.value)}
@@ -580,7 +725,7 @@ export function Worksheet({
                     const at = { row: r, column: c },
                       readOnly = !onChange || col.readOnly,
                       value = values[c],
-                      label = cellLabel?.(r, c) ?? `${sheet} ${cellName(at)}`,
+                      label = cellLabel?.(r, c) ?? `${activeSheet} ${cellName(at)}`,
                       custom = renderCell?.(r, c);
                     const invalid =
                       invalidCell?.(r, c) ||
@@ -593,7 +738,7 @@ export function Worksheet({
                         aria-selected={cellInSelection(at, selection)}
                         aria-readonly={readOnly || undefined}
                         data-cell={`${r}:${c}`}
-                        className={`${cellInSelection(at, selection) ? 'is-selected' : ''} ${focus.row === r && focus.column === c ? 'is-active' : ''} ${readOnly ? 'is-readonly' : ''}`}
+                        className={`${cellInSelection(at, selection) ? 'is-selected' : ''} ${focus.row === r && focus.column === c ? (editing ? 'is-active is-editing' : 'is-active') : ''} ${readOnly ? 'is-readonly' : ''}`}
                         onPointerDown={(e) => {
                           if (e.button !== 0) return;
                           if (e.shiftKey) {
@@ -614,6 +759,13 @@ export function Worksheet({
                                 ? current
                                 : { anchor: at, focus: at },
                             );
+                        }}
+                        onDoubleClick={() => {
+                          if (!onChange || col.readOnly || custom !== undefined) return;
+                          if (col.type === 'select' || col.type === 'checkbox' || col.type === 'color')
+                            return;
+                          setSelection({ anchor: at, focus: at });
+                          setEditing(true);
                         }}
                         onPaste={(e) => {
                           e.preventDefault();
@@ -661,7 +813,7 @@ export function Worksheet({
                             autoComplete="off"
                             spellCheck={false}
                             onChange={(e) => {
-                              setEditing(true);
+                              // Typing stays in navigation mode so arrows keep moving the cell.
                               edit(
                                 at,
                                 col.type === 'checkbox' ? String(e.target.checked) : e.target.value,
@@ -682,43 +834,112 @@ export function Worksheet({
         </table>
       </div>
       <div className="worksheet-bottom">
-        <div className="worksheet-sheet-tab" onDoubleClick={onRenameSheet && !renaming ? startRename : undefined}>
-          <Table2 size={13} />
-          {renaming ? (
-            <input
-              className="worksheet-sheet-name"
-              aria-label="工作表标签名"
-              aria-invalid={!!sheetError}
-              value={sheetDraft}
-              maxLength={40}
-              autoFocus
-              onFocus={(e) => e.target.select()}
-              onChange={(e) => { setSheetDraft(e.target.value); setSheetError(''); }}
-              onBlur={finishRename}
-              onKeyDown={(e) => {
-                if (e.nativeEvent.isComposing) return;
-                if (e.key === 'Enter') { e.preventDefault(); finishRename(); }
-                if (e.key === 'Escape') {
-                  renameActive.current = false;
-                  setRenaming(false);
-                  setSheetError('');
-                }
-              }}
-            />
-          ) : <span className="worksheet-sheet-label" title={sheet}>{sheet}</span>}
-          {onRenameSheet && !renaming && (
-            <button type="button" aria-label={`重命名标签 ${sheet}`} title="重命名标签（也可双击标签）" onClick={startRename}>
-              <Pencil size={12} />
-            </button>
-          )}
-        </div>
-        <span>
-          {rows.length} 行 × {columns.length} 列
-        </span>
+        {multiSheet ? (
+          <>
+            <div className="worksheet-sheet-tabs" role="group" aria-label="工作表标签">
+              {tabs.map((tab) => {
+                const active = tab.id === activeTabId;
+                if (active && renaming)
+                  return (
+                    <div key={tab.id} className="worksheet-sheet-tab is-active is-renaming">
+                      <Table2 size={13} />
+                      {renameInput}
+                    </div>
+                  );
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    className={`worksheet-sheet-tab-item${active ? ' worksheet-sheet-tab is-active' : ''}`}
+                    aria-pressed={active}
+                    title={tab.name}
+                    onClick={() => {
+                      if (!active) onSelectSheet?.(tab.id);
+                    }}
+                    onDoubleClick={active && onRenameSheet ? startRename : undefined}
+                  >
+                    {tab.name}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="worksheet-sheet-meta">
+              <div className="worksheet-sheet-actions">
+                {onRenameSheet && !renaming && (
+                  <button
+                    type="button"
+                    aria-label={`重命名标签 ${activeSheet}`}
+                    title="重命名标签（也可双击活动标签）"
+                    onClick={startRename}
+                  >
+                    <Pencil size={12} />
+                  </button>
+                )}
+                {onCreateSheet && (
+                  <button
+                    type="button"
+                    aria-label="新建 sheet"
+                    title="新建 sheet"
+                    onClick={onCreateSheet}
+                  >
+                    <Plus size={12} />
+                  </button>
+                )}
+                {onDeleteSheet && (
+                  <button
+                    type="button"
+                    aria-label="删除当前 sheet"
+                    title={tabs.length > 1 ? '删除当前 sheet' : '至少保留一个 sheet'}
+                    disabled={tabs.length <= 1}
+                    onClick={() => {
+                      if (activeTab) onDeleteSheet(activeTab.id);
+                    }}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
+              </div>
+              <span>
+                {rows.length} 行 × {columns.length} 列
+              </span>
+            </div>
+          </>
+        ) : (
+          <div
+            className="worksheet-sheet-tab"
+            onDoubleClick={onRenameSheet && !renaming ? startRename : undefined}
+          >
+            <Table2 size={13} />
+            {renaming ? (
+              renameInput
+            ) : (
+              <span className="worksheet-sheet-label" title={activeSheet}>
+                {activeSheet}
+              </span>
+            )}
+            {onRenameSheet && !renaming && (
+              <button
+                type="button"
+                aria-label={`重命名标签 ${activeSheet}`}
+                title="重命名标签（也可双击标签）"
+                onClick={startRename}
+              >
+                <Pencil size={12} />
+              </button>
+            )}
+          </div>
+        )}
+        {!multiSheet && (
+          <span>
+            {rows.length} 行 × {columns.length} 列
+          </span>
+        )}
       </div>
       <div className="worksheet-status" aria-live="polite">
         <span>
-          {sheetError || message || '拖动或 Shift 选择区域 · Tab / 方向键移动 · F2 编辑 · ⌘/Ctrl+C/V 复制粘贴'}
+          {sheetError ||
+            message ||
+            '方向键 / Tab 移动 · F2 或双击编辑 · Backspace 逐字删除 · Delete 清空单元格 · ⌘/Ctrl+C/V 复制粘贴'}
         </span>
         <span>
           选中 {stats.cells} 格 · 数值 {stats.numeric}

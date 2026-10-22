@@ -1,7 +1,10 @@
-import { useWorkspace, type WorksheetId } from '../state/workspace';
+import { useWorkspace } from '../state/workspace';
 import { Worksheet, type WorksheetProps } from './Worksheet-v0.2.0-2026.10.19';
 
-type Props = Omit<WorksheetProps, 'onMetadataChange'> & { sheetId: WorksheetId };
+type Props = Omit<WorksheetProps, 'onMetadataChange'> & {
+  /** Metadata key of the active sheet: the page id ('raw', 'screening'…) or a created sheet id. */
+  sheetId: string;
+};
 
 export function WorkspaceWorksheet({ sheetId, columns, ...props }: Props) {
   const { w, update } = useWorkspace();
