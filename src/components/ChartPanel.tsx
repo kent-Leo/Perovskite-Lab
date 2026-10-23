@@ -9,11 +9,17 @@ export function ChartPanel({
   kind,
   data,
   title,
+  chartTitle,
+  onChartTitleChange,
   subtitle,
 }: {
   kind: 'spectra' | 'screening' | 'calibration';
   data: PlotData;
+  /** Page default title used when the current sheet's own title is blank. */
   title: string;
+  /** The current sheet's own chart title (no sheet name is appended anywhere). */
+  chartTitle: string;
+  onChartTitleChange: (title: string) => void;
   subtitle?: string;
 }) {
   const { w, update, notify } = useWorkspace(),
@@ -93,20 +99,23 @@ export function ChartPanel({
       } },
     } } };
   });
+  // Each sheet keeps its own chart title; the page default only fills a blank one.
+  const effectiveTitle = chartTitle.trim() || title,
+    chartStyle = useMemo(() => ({ ...style, title: effectiveTitle }), [style, effectiveTitle]);
   const chart = useMemo(() => {
     try {
-      return { svg: chartSVG(data, style), error: '' };
+      return { svg: chartSVG(data, chartStyle), error: '' };
     } catch (e) {
       return { svg: '', error: (e as Error).message };
     }
-  }, [data, style]);
+  }, [data, chartStyle]);
   async function save(format: 'png' | 'svg' | 'pdf') {
     setBusy(format);
     try {
       await exportChart(
         chart.svg,
         format,
-        style,
+        chartStyle,
         kind === 'spectra' ? '荧光光谱' : kind === 'screening' ? '对象筛选' : '校准曲线',
       );
       notify(`${format.toUpperCase()} 图表已导出`);
@@ -121,7 +130,7 @@ export function ChartPanel({
       <section className="chart-card">
         <div className="chart-head">
           <div>
-            <h2>{title}</h2>
+            <h2 data-testid="chart-title">{effectiveTitle}</h2>
             <span>{subtitle}</span>
           </div>
           <button
@@ -210,11 +219,14 @@ export function ChartPanel({
                   </Field>
                 </div>
               )}
-              <Field label="图表标题">
+              <Field
+                label="图表标题"
+                hint={`按 sheet 独立保存；留空时显示「${title}」`}
+              >
                 <input
-                  value={style.title}
-                  placeholder="可选"
-                  onChange={(e) => set({ title: e.target.value })}
+                  value={chartTitle}
+                  placeholder={title}
+                  onChange={(e) => onChartTitleChange(e.target.value)}
                 />
               </Field>
               <div className="form-grid">
@@ -350,6 +362,14 @@ export function ChartPanel({
                   onChange={(e) => set({ points: e.target.checked })}
                 />
                 显示数据点
+              </label>
+              <label className="check-line">
+                <input
+                  type="checkbox"
+                  checked={!!style.pointValues}
+                  onChange={(e) => set({ pointValues: e.target.checked })}
+                />
+                显示数据点数值
               </label>
               <label className="check-line">
                 <input

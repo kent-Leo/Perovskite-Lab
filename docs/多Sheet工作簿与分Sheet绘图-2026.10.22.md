@@ -71,15 +71,15 @@ interface WorkbookState {
 三个绘图页在图表上方增加了绘图 sheet 栏（`.plot-sheet-bar`）：
 
 - 左侧是绘图 sheet 标签，可访问名称 `绘图 sheet ${sheet 名}`，与表格区的活动 sheet 同步；
-- 右侧是视图切换：「当前 sheet」（默认）只画当前 sheet；「全部 sheet」把该表格区的每个 sheet 平铺成一张卡片（`.sheet-gallery-card`），卡片头部是 sheet 名，卡片内用该 sheet 自己的数据和列头元数据绘图，样式与当前页共享；
+- 右侧是视图切换：「当前 sheet」（默认）只画当前 sheet；「全部 sheet」把该表格区的每个 sheet 平铺成一张卡片（`.sheet-gallery-card`），卡片头部是 sheet 名，卡片内用该 sheet 自己的数据和列头元数据绘图，样式与当前页共享；从 v0.6.0 起每张图表可使用各自 sheet 独立的标题（标题中不追加 sheet 名，见[表格拖拽框选与图表标题数值](表格拖拽框选与图表标题数值-2026.10.23.md)）；
 - 卡片右上角「查看」按钮（`查看 sheet ${sheet 名}`）会把该 sheet 切为当前 sheet，并回到「当前 sheet」视图。
 
 切回旧 sheet 时，表格内容、指标面板和图表一起恢复；不同 sheet 的数据互不影响。浓度梯度页没有绘图区，因此没有这套切换。
 
 ### 数据归属与样式共用
 
-- **按 sheet 保存**：表格数据、原始光谱列映射、列头名称 / 单位 / 备注 / 颜色（`sheetMetadata` 以 sheet id 为键）、校准方法设置、梯度配方；
-- **页面内共用**：图表样式（坐标轴、图例位置与字号、线宽、字体、导出尺寸等 `styles`）在同一表格页的所有 sheet 间共用，切换 sheet 不改变样式设置；
+- **按 sheet 保存**：表格数据、原始光谱列映射、列头名称 / 单位 / 备注 / 颜色（`sheetMetadata` 以 sheet id 为键）、校准方法设置、梯度配方、图表标题（`WorkbookTab.chartTitle`，留空时使用页面默认标题）；
+- **页面内共用**：图表样式（坐标轴、图例位置与字号、线宽、字体、导出尺寸等 `styles`）在同一表格页的所有 sheet 间共用，切换 sheet 不改变样式设置；图表标题自 v0.6.0 起按 sheet 独立，不属于共用样式；
 - 删除 sheet 时，该 sheet 的列头元数据一起清理。
 
 ## 限制与注意事项

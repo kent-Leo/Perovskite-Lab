@@ -4,7 +4,7 @@ import { useWorkbook } from '../state/useWorkbook';
 import { spectrumStats, numeric, fmt } from '../domain/math';
 import { peakMetrics } from '../domain/peak';
 import type { ColumnMetadata, PlotData, Series, Spectrum } from '../domain/types';
-import type { RawSheetPayload } from '../domain/workbook';
+import { sheetChartTitle, type RawSheetPayload } from '../domain/workbook';
 import { rawColumnIndex, rawColumnKey, rawSpectrumColor, rawSpectrumLabel } from '../domain/raw-spectra';
 import { ChartPanel } from '../components/ChartPanel';
 import {
@@ -15,6 +15,9 @@ import {
 } from '../components/SheetPlotPanel-v0.5.5-2026.10.22';
 import { ErrorNote, Field, Metric, SectionHead } from '../components/ui';
 import { exportExcel } from '../services/download';
+
+/** Page-level base title; a custom style.title overrides it. */
+const BASE_TITLE = '荧光光谱';
 
 /**
  * Plot points come from the last confirmed raw table/import of one sheet, while
@@ -109,9 +112,22 @@ export function Spectra() {
             w.sheetMetadata?.[tab.id],
           );
           const result = plotSeries(spectra.filter((s) => s.visible), normalize);
-          return { id: tab.id, name: tab.name, data: result.data, error: result.error };
+          return {
+            id: tab.id,
+            name: tab.name,
+            // Each sheet's own chart title, without appending the sheet name.
+            title: sheetChartTitle(tab, BASE_TITLE),
+            data: result.data,
+            error: result.error,
+          };
         } catch (e) {
-          return { id: tab.id, name: tab.name, data: null, error: (e as Error).message };
+          return {
+            id: tab.id,
+            name: tab.name,
+            title: sheetChartTitle(tab, BASE_TITLE),
+            data: null,
+            error: (e as Error).message,
+          };
         }
       }),
     [wb.snapshots, w.sheetMetadata, normalize],
@@ -198,7 +214,9 @@ export function Spectra() {
         <ChartPanel
           kind="spectra"
           data={chart.data ?? { series: [] }}
-          title="荧光光谱"
+          title={BASE_TITLE}
+          chartTitle={wb.chartTitle}
+          onChartTitleChange={wb.setChartTitle}
           subtitle={
             normalize
               ? `${wb.activeName} · 按各曲线最大值归一化`

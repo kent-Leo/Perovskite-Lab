@@ -22,8 +22,11 @@ import { ChartPanel } from '../components/ChartPanel';
 import { ErrorNote, Field, Metric, SectionHead } from '../components/ui';
 import { WorkspaceWorksheet as Worksheet } from '../components/WorkspaceWorksheet-v0.3.1-2026.10.19';
 import type { WorksheetColumn } from '../domain/worksheet-v0.2.0-2026.10.19';
-import type { ScreeningSheetPayload } from '../domain/workbook';
+import { sheetChartTitle, type ScreeningSheetPayload } from '../domain/workbook';
 import { exportExcel } from '../services/download';
+
+/** Page default chart title used when a sheet has no title of its own. */
+const BASE_TITLE = '分析对象筛选';
 
 interface ScreeningChartResult {
   /** 与 objects 同序的响应值；计算失败时为空数组。 */
@@ -87,7 +90,13 @@ export function Screening({ onImport }: { onImport: () => void }) {
   // 「全部 sheet」画廊：逐 sheet 用同一纯函数计算，未激活 sheet 的数据来自 store。
   const charts: SheetGalleryChart[] = wb.snapshots.map(({ tab, payload }) => {
     const chart = screeningChart(payload as ScreeningSheetPayload, w.styles.screening);
-    return { id: tab.id, name: tab.name, data: chart.data, error: chart.error || undefined };
+    return {
+      id: tab.id,
+      name: tab.name,
+      title: sheetChartTitle(tab, BASE_TITLE),
+      data: chart.data,
+      error: chart.error || undefined,
+    };
   });
   function move(from: number, to: number) {
     if (to < 0 || to >= w.objects.length) return;
@@ -169,7 +178,9 @@ export function Screening({ onImport }: { onImport: () => void }) {
       ) : (
         <ChartPanel
           kind="screening"
-          title="分析对象筛选"
+          title={BASE_TITLE}
+          chartTitle={wb.chartTitle}
+          onChartTitleChange={wb.setChartTitle}
           subtitle={`${wb.activeName} · ${responses[w.screenMode]} · ${w.objects.length} 个对象`}
           data={
             result.data ?? {

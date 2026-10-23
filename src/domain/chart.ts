@@ -127,6 +127,42 @@ export function chartSVG(data: PlotData, style: ChartStyle): string {
     }
   }
   out.push('</g>');
+  if (style.pointValues) {
+    // Numeric labels are clamped to the plot area so they never spill into the
+    // axes or legend, and they carry data-point-value instead of entering the
+    // data-axis / data-legend groups.
+    const valueFontSize = Math.max(9, fs * 0.75),
+      clampX = (x: number) => Math.max(left + 2, Math.min(left + pw - 2, x));
+    const valueAnchor = (x: number) =>
+      x - left < 40 ? 'start' : left + pw - x < 40 ? 'end' : 'middle';
+    const valueLabel = (x: number, y: number, value: number) =>
+      text(clampX(x), y, fmt(value, 4), valueAnchor(x), valueFontSize, 'data-point-value="true"');
+    for (const s of data.series) {
+      // Derived series (for example a calibration fit line) are not data points.
+      if (s.showPointValues === false) continue;
+      if (s.kind === 'bar') {
+        for (const p of s.points) {
+          const y = sy(p.y);
+          // Positive bars carry the value above the cap, negative bars below the base.
+          const baseline =
+            p.y >= 0
+              ? Math.max(top + valueFontSize, y - 5)
+              : Math.min(top + ph - 3, y + valueFontSize + 5);
+          valueLabel(sx(p.x), baseline, p.y);
+        }
+      } else {
+        for (const p of s.points) {
+          const y = sy(p.y), above = y - style.pointSize - 5;
+          // Prefer the free side of the point, then clamp inside the plot area.
+          const baseline =
+            above - valueFontSize * 0.8 >= top
+              ? above
+              : Math.min(y + style.pointSize + valueFontSize + 2, top + ph - 3);
+          valueLabel(sx(p.x), baseline, p.y);
+        }
+      }
+    }
+  }
 
   for (const side of axisSides) {
     const a = axes[side];

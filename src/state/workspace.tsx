@@ -17,6 +17,7 @@ import {
   defaultRawSheet,
   emptyWorkbooks,
   ensureWorkbooks,
+  seedSheetChartTitles,
   type CalibrationSheetPayload,
   type GradientSheetPayload,
   type WorkbookHost,
@@ -205,6 +206,33 @@ export function normalizeWorkspaceUnits(w: Workspace): Workspace {
     )),
   };
 }
+const CHART_STYLE_WORKBOOKS = [
+  ['spectra', 'raw'],
+  ['screening', 'screening'],
+  ['calibration', 'calibration'],
+] as const;
+/**
+ * Up to v0.5.5 the chart title was one shared `styles[kind].title`. From
+ * v0.6.0 every sheet keeps its own title, so seed each sheet of a plotting
+ * page with the previously shared title once and clear the legacy field.
+ * Sheets that already carry their own title are never overwritten.
+ */
+function migrateSheetChartTitles(w: Workspace): Workspace {
+  let changed = false,
+    styles = w.styles;
+  const workbooks = { ...(w.workbooks ?? {}) };
+  for (const [kind, page] of CHART_STYLE_WORKBOOKS) {
+    const legacy = w.styles?.[kind]?.title ?? '';
+    const workbook = workbooks[page];
+    if (!workbook) continue;
+    const seeded = seedSheetChartTitles(workbook, legacy);
+    if (!seeded) continue;
+    workbooks[page] = seeded;
+    styles = { ...styles, [kind]: { ...styles[kind], title: '' } };
+    changed = true;
+  }
+  return changed ? { ...w, styles, workbooks } : w;
+}
 const KEY = 'perovskite-lab-workspace-v1';
 function load(): Workspace {
   try {
@@ -219,7 +247,7 @@ function load(): Workspace {
         w.styles &&
         w.gradient
       )
-        return ensureWorkbooks(normalizeWorkspaceUnits(w));
+        return migrateSheetChartTitles(ensureWorkbooks(normalizeWorkspaceUnits(w)));
     }
   } catch {
     /* recover corrupt storage */
