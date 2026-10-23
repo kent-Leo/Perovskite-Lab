@@ -210,6 +210,14 @@
 .worksheet td > select:focus {
   outline: none;
 }
+/* Cell inputs must not be native drag sources: on Windows a mousedown inside a
+   focused / select-all input starts a text drag (dragstart + pointercancel) and
+   the pointer stream that drives drag-to-select stops. The React handlers also
+   set draggable={false} and cancel dragstart for extra safety. */
+.worksheet td > input,
+.worksheet td > select {
+  -webkit-user-drag: none;
+}
 .worksheet td.is-selected {
   background: #e9f2ff;
 }

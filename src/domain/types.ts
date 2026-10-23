@@ -89,6 +89,7 @@ export interface ChartStyle {
   axes?: Partial<Record<AxisSide, Partial<AxisStyle>>>;
   primaryColor?: string;
   secondaryColor?: string;
+  /** Legacy shared chart title (v0.5.5 and earlier); v0.6.0 stores titles per sheet. */
   title: string;
   xLabel: string;
   yLabel: string;
@@ -102,6 +103,8 @@ export interface ChartStyle {
   fontFamily: string;
   grid: boolean;
   points: boolean;
+  // Show every data point's y value next to the mark (optional: older workspaces omit it).
+  pointValues?: boolean;
   dashed: boolean;
   legend: 'right' | 'bottom' | 'free' | 'none';
   // Free legend position as a fraction of the canvas width/height.
@@ -118,6 +121,8 @@ export interface Series {
   points: Point[];
   kind?: 'line' | 'scatter' | 'bar';
   dashed?: boolean;
+  /** Set to false for derived lines (for example a fit) that are not measured data points. */
+  showPointValues?: boolean;
 }
 export interface PlotData {
   series: Series[];
@@ -128,7 +133,8 @@ export const uid = () => crypto.randomUUID();
 export const defaultStyle = (kind: 'spectra' | 'screening' | 'calibration'): ChartStyle => ({
   primaryColor: '#258873',
   secondaryColor: '#b6873f',
-  title: kind === 'spectra' ? '' : kind === 'screening' ? 'Selectivity' : 'Calibration',
+  // Empty by default: each sheet's own title (or the page default) fills it.
+  title: '',
   xLabel:
     kind === 'spectra'
       ? 'Wavelength / nm'
@@ -151,6 +157,7 @@ export const defaultStyle = (kind: 'spectra' | 'screening' | 'calibration'): Cha
   fontFamily: 'Arial',
   grid: false,
   points: false,
+  pointValues: false,
   dashed: false,
   legend: kind === 'screening' ? 'none' : 'right',
   legendX: 0.72,
@@ -183,4 +190,6 @@ export type WorkbookId = 'raw' | 'screening' | 'calibration' | 'gradient';
 export interface WorkbookTab {
   id: string;
   name: string;
+  /** Per-sheet chart title for the three plotting pages; empty/missing uses the page default. */
+  chartTitle?: string;
 }

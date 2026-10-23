@@ -231,8 +231,58 @@ function uniqueNames(tabs: WorkbookTab[], page: WorkbookId): WorkbookTab[] {
       suffix = 2;
     while (seen.has(candidate.toLowerCase())) candidate = `${name} (${suffix++})`;
     seen.add(candidate.toLowerCase());
-    return { id: tab.id, name: candidate };
+    return { ...tab, id: tab.id, name: candidate };
   });
+}
+
+/** Longest accepted per-sheet chart title (characters). */
+export const MAX_CHART_TITLE = 100;
+
+/** Normalize a per-sheet chart title; blank means "use the page default title". */
+function cleanChartTitle(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const clean = value.trim().replace(/\s+/g, ' ');
+  return clean ? clean.slice(0, MAX_CHART_TITLE) : undefined;
+}
+
+/** One sheet's effective chart title: its own title, or the page default. */
+export function sheetChartTitle(tab: WorkbookTab | undefined, fallback: string): string {
+  return tab?.chartTitle?.trim() || fallback;
+}
+
+/** Store a chart title on the active sheet only; other sheets keep their own. */
+export function setActiveSheetChartTitle(
+  w: WorkbookHost,
+  page: WorkbookId,
+  title: string,
+): Partial<WorkbookHost> {
+  const clean = cleanChartTitle(title);
+  const wb = workbookOf(w, page);
+  const tabs = wb.tabs.map((tab) =>
+    tab.id === wb.activeId ? { ...tab, chartTitle: clean } : tab,
+  );
+  if (tabs.every((tab, index) => tab.chartTitle === wb.tabs[index].chartTitle)) return {};
+  return { workbooks: workbooksWith(w, page, { ...wb, tabs }) };
+}
+
+/**
+ * Seed a legacy page-shared chart title onto every sheet that has no title yet.
+ * Returns null when the workbook already carries per-sheet titles (or the
+ * legacy title is blank), so callers can keep the old object untouched.
+ */
+export function seedSheetChartTitles(
+  workbook: WorkbookState,
+  legacyTitle: string,
+): WorkbookState | null {
+  const legacy = cleanChartTitle(legacyTitle);
+  if (!legacy) return null;
+  let changed = false;
+  const tabs = workbook.tabs.map((tab) => {
+    if (tab.chartTitle?.trim()) return tab;
+    changed = true;
+    return { ...tab, chartTitle: legacy };
+  });
+  return changed ? { ...workbook, tabs } : null;
 }
 
 function repairTabs(
@@ -245,12 +295,14 @@ function repairTabs(
   if (Array.isArray(input)) {
     for (const value of input) {
       if (!value || typeof value !== 'object') continue;
-      const raw = value as { id?: unknown; name?: unknown };
+      const raw = value as { id?: unknown; name?: unknown; chartTitle?: unknown };
       if (typeof raw.id !== 'string' || !raw.id.trim() || ids.has(raw.id)) continue;
       ids.add(raw.id);
+      const chartTitle = cleanChartTitle(raw.chartTitle);
       tabs.push({
         id: raw.id,
         name: typeof raw.name === 'string' && raw.name.trim() ? raw.name : defaultName,
+        ...(chartTitle ? { chartTitle } : {}),
       });
       if (tabs.length >= MAX_SHEETS) break;
     }

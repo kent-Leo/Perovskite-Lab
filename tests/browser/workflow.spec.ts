@@ -154,7 +154,7 @@ test('two-column object CSV maps automatically and provides a downloadable forma
   const download = page.waitForEvent('download');
   await dialog.getByRole('button', { name: '下载当前布局 CSV 模板' }).click();
   expect((await download).suggestedFilename()).toMatch(
-    /对象筛选模板-v0\.5\.5-\d{4}\.\d{1,2}\.\d{1,2}\.csv/,
+    /对象筛选模板-v0\.6\.0-\d{4}\.\d{1,2}\.\d{1,2}\.csv/,
   );
   await dialog.getByRole('button', { name: '确认导入', exact: true }).click();
   await expect(page.getByLabel('对象名称 2', { exact: true })).toHaveValue('Cd2+');

@@ -68,6 +68,12 @@ export type WorksheetProps = {
 };
 const firstCell = { row: 0, column: 0 };
 
+/** Parse a `data-cell="row:column"` attribute into a cell address. */
+function cellFromAttr(value: string | null | undefined): CellAddress | null {
+  const match = value ? /^(\d+):(\d+)$/.exec(value) : null;
+  return match ? { row: Number(match[1]), column: Number(match[2]) } : null;
+}
+
 export function Worksheet({
   book,
   sheet,
@@ -137,6 +143,7 @@ export function Worksheet({
   }
   const root = useRef<HTMLDivElement>(null),
     dragging = useRef(false),
+    dragPointer = useRef<number | null>(null),
     rowDragging = useRef<number | null>(null),
     navigating = useRef(false),
     pendingFocus = useRef<CellAddress | null>(null);
@@ -177,12 +184,32 @@ export function Worksheet({
     history.current.expected = fingerprint;
   }, [fingerprint]);
   useEffect(() => {
+    // Drag-to-select must keep working for fast drags and when the pointer
+    // briefly leaves the table: td onPointerEnter alone can miss those cells
+    // (Windows additionally cancels the pointer stream when the browser starts
+    // a native text drag from a focused input). A window-level pointermove
+    // fallback hit-tests the cell under the cursor with elementFromPoint.
+    const extend = (e: PointerEvent) => {
+      if (!dragging.current || e.buttons !== 1) return;
+      if (dragPointer.current !== null && e.pointerId !== dragPointer.current) return;
+      const hit = document.elementFromPoint(e.clientX, e.clientY);
+      // Ignore clicks over other worksheets / chrome: only this grid extends.
+      if (!(hit instanceof Element) || !root.current?.contains(hit)) return;
+      const at = cellFromAttr(hit.closest('[data-cell]')?.getAttribute('data-cell'));
+      if (!at) return;
+      setSelection((s) =>
+        s.focus.row === at.row && s.focus.column === at.column ? s : { ...s, focus: at },
+      );
+    };
     const stop = () => {
       dragging.current = false;
+      dragPointer.current = null;
     };
+    window.addEventListener('pointermove', extend);
     window.addEventListener('pointerup', stop);
     window.addEventListener('pointercancel', stop);
     return () => {
+      window.removeEventListener('pointermove', extend);
       window.removeEventListener('pointerup', stop);
       window.removeEventListener('pointercancel', stop);
     };
@@ -283,7 +310,12 @@ export function Worksheet({
     if (!at) return;
     navigating.current = true;
     const cell = root.current?.querySelector<HTMLElement>(`[data-cell="${at.row}:${at.column}"]`);
-    (cell?.querySelector<HTMLElement>('input, select') ?? cell)?.focus();
+    const target = cell?.querySelector<HTMLElement>('input, select') ?? cell;
+    target?.focus();
+    // e.preventDefault() on pointerdown suppresses the browser's native focus
+    // and select-all, so reproduce the established behaviour here: clicking a
+    // cell focuses its input with all text selected (typing replaces it).
+    if (target instanceof HTMLInputElement && target.type === 'text') target.select();
     navigating.current = false;
     pendingFocus.current = null;
   }, [selection, focusRequest]);
@@ -485,6 +517,13 @@ export function Worksheet({
       onKeyDown={keyboard}
       onCopy={(e) => clipboard(e)}
       onCut={(e) => clipboard(e, true)}
+      onDragStart={(e) => {
+        // A native drag from a cell (typically text selected inside a focused
+        // input on Windows) cancels the pointer stream that drives drag-to-
+        // select. Row-number reordering lives outside [data-cell] and keeps
+        // working as a deliberate drag source.
+        if ((e.target as HTMLElement).closest?.('[data-cell]')) e.preventDefault();
+      }}
     >
       <div className="worksheet-bookbar">
         <span>
@@ -727,6 +766,13 @@ export function Worksheet({
                       value = values[c],
                       label = cellLabel?.(r, c) ?? `${activeSheet} ${cellName(at)}`,
                       custom = renderCell?.(r, c);
+                    // Native controls and custom renderCell content must keep
+                    // their own focus/click/drag behaviour; only the cell body
+                    // (text inputs, read-only spans) drives drag-to-select.
+                    const nativeControl =
+                      custom !== undefined ||
+                      (!readOnly &&
+                        (col.type === 'select' || col.type === 'checkbox' || col.type === 'color'));
                     const invalid =
                       invalidCell?.(r, c) ||
                       (col.type === 'number' && !!value.trim() && numeric(value) === null);
@@ -741,11 +787,26 @@ export function Worksheet({
                         className={`${cellInSelection(at, selection) ? 'is-selected' : ''} ${focus.row === r && focus.column === c ? (editing ? 'is-active is-editing' : 'is-active') : ''} ${readOnly ? 'is-readonly' : ''}`}
                         onPointerDown={(e) => {
                           if (e.button !== 0) return;
+                          if (!nativeControl) {
+                            // Windows: pressing inside a focused / select-all text
+                            // input starts the browser's native text drag, which
+                            // fires dragstart + pointercancel and stops the
+                            // pointerenter stream, so drag-to-select silently dies.
+                            // Cancelling the default keeps the pointer stream; the
+                            // layout effect then focuses the cell input manually.
+                            e.preventDefault();
+                          }
                           if (e.shiftKey) {
                             e.preventDefault();
                             setSelection((s) => ({ ...s, focus: at }));
-                          } else setSelection({ anchor: at, focus: at });
-                          dragging.current = true;
+                          } else {
+                            setSelection({ anchor: at, focus: at });
+                            if (!nativeControl) pendingFocus.current = at;
+                          }
+                          // Native controls keep their own interaction; only the
+                          // cell body starts a drag-to-select gesture.
+                          dragging.current = !nativeControl;
+                          dragPointer.current = nativeControl ? null : e.pointerId;
                           setEditing(false);
                         }}
                         onPointerEnter={(e) => {
@@ -812,6 +873,8 @@ export function Worksheet({
                             aria-invalid={invalid || undefined}
                             autoComplete="off"
                             spellCheck={false}
+                            // Never let the cell input become a native drag source.
+                            draggable={false}
                             onChange={(e) => {
                               // Typing stays in navigation mode so arrows keep moving the cell.
                               edit(

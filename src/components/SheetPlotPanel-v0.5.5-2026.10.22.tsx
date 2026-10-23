@@ -19,6 +19,8 @@ export interface SheetGalleryChart {
   name: string;
   data: PlotData | null;
   error?: string;
+  /** The sheet's own chart title (no sheet name); omitted keeps the shared style title. */
+  title?: string;
 }
 
 /**
@@ -99,7 +101,10 @@ function renderSheetChart(chart: SheetGalleryChart, style: ChartStyle): Rendered
       detail: '该 sheet 还没有可绘制的数据，导入或粘贴数据后即可绘图。',
     };
   try {
-    return { chart, svg: chartSVG(chart.data, style) };
+    return {
+      chart,
+      svg: chartSVG(chart.data, chart.title === undefined ? style : { ...style, title: chart.title }),
+    };
   } catch (error) {
     return {
       chart,

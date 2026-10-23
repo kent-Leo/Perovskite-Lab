@@ -31,8 +31,11 @@ import { ChartPanel } from '../components/ChartPanel';
 import { ErrorNote, Field, Metric, SectionHead } from '../components/ui';
 import { WorkspaceWorksheet as Worksheet } from '../components/WorkspaceWorksheet-v0.3.1-2026.10.19';
 import type { WorksheetColumn } from '../domain/worksheet-v0.2.0-2026.10.19';
-import type { CalibrationSheetPayload } from '../domain/workbook';
+import { sheetChartTitle, type CalibrationSheetPayload } from '../domain/workbook';
 import { exportExcel } from '../services/download';
+
+/** Page default chart title used when a sheet has no title of its own. */
+const BASE_TITLE = '浓度–响应校准曲线';
 
 type Fit = ReturnType<typeof regress>;
 
@@ -102,6 +105,8 @@ function calibrationChart(
           {
             name: '线性拟合',
             color: style.secondaryColor ?? '#b6873f',
+            // The fit line endpoints are derived, not measured data points.
+            showPointValues: false,
             points: [
               { x: fit.min, y: fit.slope * fit.min + fit.intercept },
               { x: fit.max, y: fit.slope * fit.max + fit.intercept },
@@ -151,7 +156,13 @@ export function Calibration({ onImport }: { onImport: () => void }) {
   // 「全部 sheet」画廊：逐 sheet 用同一纯函数计算，未激活 sheet 的数据来自 store。
   const charts: SheetGalleryChart[] = wb.snapshots.map(({ tab, payload }) => {
     const chart = calibrationChart(payload as CalibrationSheetPayload, w.styles.calibration);
-    return { id: tab.id, name: tab.name, data: chart.data, error: chart.error || undefined };
+    return {
+      id: tab.id,
+      name: tab.name,
+      title: sheetChartTitle(tab, BASE_TITLE),
+      data: chart.data,
+      error: chart.error || undefined,
+    };
   });
   const limits = useMemo(() => {
     try {
@@ -287,7 +298,9 @@ export function Calibration({ onImport }: { onImport: () => void }) {
       ) : (
         <ChartPanel
           kind="calibration"
-          title="浓度–响应校准曲线"
+          title={BASE_TITLE}
+          chartTitle={wb.chartTitle}
+          onChartTitleChange={wb.setChartTitle}
           subtitle={`${wb.activeName} · 普通最小二乘 · 含截距 · 不加权`}
           data={result.data ?? { series: [] }}
         />

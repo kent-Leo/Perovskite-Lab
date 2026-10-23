@@ -2,9 +2,9 @@ import { test, expect, type Locator, type Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 
-const SHOT_DIR = path.resolve('验证截图-v0.5.5-2026.10.22');
+const SHOT_DIR = path.resolve('验证截图-v0.6.0-2026.10.23');
 mkdirSync(SHOT_DIR, { recursive: true });
-const shot = (name: string) => path.join(SHOT_DIR, `${name}-v0.5.5-2026.10.22.png`);
+const shot = (name: string) => path.join(SHOT_DIR, `${name}-v0.6.0-2026.10.23.png`);
 
 const STORAGE_KEY = 'perovskite-lab-workspace-v1';
 

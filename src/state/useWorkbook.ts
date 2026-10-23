@@ -5,6 +5,7 @@ import {
   deleteSheet,
   MAX_SHEETS,
   renameSheet,
+  setActiveSheetChartTitle,
   sheetSnapshots,
   switchSheet,
   workbookOf,
@@ -17,12 +18,15 @@ export interface WorkbookApi {
   tabs: WorkbookTab[];
   activeId: string;
   activeName: string;
+  /** Chart title stored on the active sheet; blank falls back to the page default. */
+  chartTitle: string;
   /** Payload of every tab (active one captured from the top-level fields). */
   snapshots: SheetSnapshot[];
   canCreate: boolean;
   select: (id: string) => void;
   create: () => void;
   rename: (name: string) => void;
+  setChartTitle: (title: string) => void;
   remove: (id: string) => void;
 }
 
@@ -52,6 +56,12 @@ export function useWorkbook(page: WorkbookId): WorkbookApi {
     },
     [page, update],
   );
+  const setChartTitle = useCallback(
+    (title: string) => {
+      update((prev) => setActiveSheetChartTitle(prev, page, title));
+    },
+    [page, update],
+  );
   const remove = useCallback(
     (id: string) => {
       if (workbookOf(w, page).tabs.length <= 1) {
@@ -72,11 +82,13 @@ export function useWorkbook(page: WorkbookId): WorkbookApi {
     tabs: workbook.tabs,
     activeId: active.id,
     activeName: active.name,
+    chartTitle: active.chartTitle ?? '',
     snapshots: sheetSnapshots(w, page),
     canCreate: workbook.tabs.length < MAX_SHEETS,
     select,
     create,
     rename,
+    setChartTitle,
     remove,
   };
 }
