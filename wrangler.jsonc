@@ -1,8 +1,11 @@
 {
   "name": "perovskite-lab",
   "compatibility_date": "2026-10-20",
+  "main": "worker/ai-worker-2026.10.24.ts",
   "assets": {
-    "directory": "./dist"
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
   },
   "previews": {}
 }

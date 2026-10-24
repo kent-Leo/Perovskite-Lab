@@ -4,3 +4,7 @@ test-results/
 playwright-report/
 .DS_Store
 *.tsbuildinfo
+.env
+.env.*
+.dev.vars
+.dev.vars.*

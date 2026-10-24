@@ -15,6 +15,7 @@ import {
 } from '../components/SheetPlotPanel-v0.5.5-2026.10.22';
 import { ErrorNote, Field, Metric, SectionHead } from '../components/ui';
 import { exportExcel } from '../services/download';
+import { AiSpectraPanel } from '../components/AiSpectraPanel-2026.10.24';
 
 /** Page-level base title; a custom style.title overrides it. */
 const BASE_TITLE = '荧光光谱';
@@ -225,6 +226,8 @@ export function Spectra() {
         />
       )}
       {chart.error && <ErrorNote>{chart.error}</ErrorNote>}
+      <AiSpectraPanel key={wb.activeId} spectra={rawSpectra} sheet={wb.activeName} excitation={excitation}
+        onExcitationChange={(value) => update({ excitation: value })} />
       <section className="peak-panel" aria-labelledby="peak-title">
         <SectionHead
           title="峰特性分析"

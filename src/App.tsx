@@ -1,4 +1,4 @@
-import { APP_VERSION } from './version-v0.6.0-2026.10.23';
+import { APP_VERSION } from './version-v0.7.0-2026.10.24';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity,
@@ -173,8 +173,8 @@ export default function App() {
           <div className="privacy-icon">
             <HardDrive size={19} />
           </div>
-          <strong>数据保留在本机</strong>
-          <p>文件在浏览器中处理，工作区自动保存在当前浏览器。</p>
+          <strong>工作区保留在本机</strong>
+          <p>工作区自动保存在当前浏览器。使用 AI 分析时，所选数据经本站转发给你选择的 AI 助手。</p>
           <span className="version-label">PEROVSKITE LAB / v{APP_VERSION}</span>
         </div>
       </aside>
