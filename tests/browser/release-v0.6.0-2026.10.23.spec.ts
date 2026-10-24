@@ -1,6 +1,8 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { APP_VERSION } from '../../src/version-v0.7.0-2026.10.24';
+import { dateStamp } from '../../src/services/download';
 
 /**
  * v0.6.0 release verification screenshots.
@@ -9,9 +11,9 @@ import path from 'node:path';
  * match the shipped build: per-sheet chart titles, optional data-point values
  * and the repaired drag-to-select behaviour.
  */
-const SHOT_DIR = path.resolve('验证截图-v0.6.0-2026.10.23');
+const SHOT_DIR = path.resolve(`验证截图-v${APP_VERSION}-${dateStamp()}`);
 mkdirSync(SHOT_DIR, { recursive: true });
-const shot = (name: string) => path.join(SHOT_DIR, `${name}-v0.6.0-2026.10.23.png`);
+const shot = (name: string) => path.join(SHOT_DIR, `${name}-v${APP_VERSION}-${dateStamp()}.png`);
 
 const paste = async (cell: Locator, text: string) => {
   await cell.evaluate((input, value) => {

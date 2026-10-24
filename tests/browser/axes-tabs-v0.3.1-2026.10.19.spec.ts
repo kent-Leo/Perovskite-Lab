@@ -115,7 +115,7 @@ test('four axes export to SVG, PNG and PDF with versioned filenames', async ({ p
     const pending = page.waitForEvent('download');
     await page.getByRole('button', { name: format, exact: true }).click();
     const file = await pending;
-    expect(file.suggestedFilename()).toMatch(/-v0\.6\.0-\d{4}\.\d{1,2}\.\d{1,2}\./);
+    expect(file.suggestedFilename()).toMatch(/-v0\.7\.0-\d{4}\.\d{1,2}\.\d{1,2}\./);
     const path = info.outputPath(`四轴-v0.3.1-2026.10.19.${format.toLowerCase()}`);
     await file.saveAs(path);
     const bytes = await readFile(path);

@@ -18,8 +18,9 @@ test.beforeEach(async ({ page }) => {
 test('all four pages use worksheets and the application displays its version', async ({
   page,
 }, info) => {
-  await expect(page.locator('.sidebar')).toContainText('v0.6.0');
-  await expect(page.locator('.version-label')).toHaveText('PEROVSKITE LAB / v0.6.0');
+  await expect(page).toHaveTitle('Perovskite Lab v0.7.0 · 科研工作台');
+  await expect(page.locator('.sidebar')).toContainText('v0.7.0');
+  await expect(page.locator('.version-label')).toHaveText('PEROVSKITE LAB / v0.7.0');
   for (const [name, count] of [
     ['光谱工作台', 1],
     ['对象筛选', 1],
@@ -152,8 +153,8 @@ test('gradient stays editable on errors, recalculates, undoes changes and export
   const downloaded = page.waitForEvent('download');
   await page.getByRole('button', { name: '导出 Excel', exact: true }).click();
   const file = await downloaded;
-  expect(file.suggestedFilename()).toMatch(/-v0\.6\.0-\d{4}\.\d{1,2}\.\d{1,2}\.xlsx$/);
-  const path = info.outputPath('梯度-v0.6.0-2026.10.23.xlsx');
+  expect(file.suggestedFilename()).toMatch(/-v0\.7\.0-\d{4}\.\d{1,2}\.\d{1,2}\.xlsx$/);
+  const path = info.outputPath('梯度-v0.7.0-2026.10.24.xlsx');
   await file.saveAs(path);
   const records = XLSX.utils.sheet_to_json<Record<string, unknown>>(
     XLSX.read(await readFile(path)).Sheets.Data,
