@@ -26,7 +26,7 @@ describe('BYOK relay', () => {
     const [url, init] = upstream.mock.calls[0];
     expect(url).toBe('https://api.deepseek.com/chat/completions');
     expect(init.headers.Authorization).toBe(`Bearer ${key}`);
-    expect(init.redirect).toBe('error');
+    expect(init.redirect).toBe('manual');
     expect(JSON.stringify(init.body)).not.toContain(key);
     expect(JSON.parse(JSON.parse(init.body).messages[1].content)).toEqual(input);
     expect(await response.text()).not.toContain(key);
@@ -96,6 +96,42 @@ describe('BYOK relay', () => {
     const response = await handleAiRequest(request({ provider: 'deepseek', model: 'deepseek-flash' }, 'test'), upstream);
     expect((await response.json()).ok).toBe(true);
     expect(upstream.mock.calls[0][1].body).not.toContain('s1');
+  });
+  it('uses redirect settings accepted by Workers for both test and analysis requests', async () => {
+    for (const path of ['test', 'analyze']) {
+      const upstream = vi.fn(async (_url, init) => {
+        if (init.redirect === 'error') throw new TypeError('Invalid redirect value, must be follow or manual');
+        expect(init.redirect).toBe('manual');
+        return success(path === 'test' ? { ok: true } : suggestion);
+      });
+      const response = await handleAiRequest(request(undefined, path), upstream as typeof fetch);
+      expect(response.status).toBe(200);
+      expect(upstream).toHaveBeenCalledTimes(1);
+    }
+  });
+  it('rejects every redirect response without sending a second request or leaking Location', async () => {
+    for (const status of [300, 301, 302, 303, 304, 307, 308, 399]) {
+      const upstream = vi.fn().mockResolvedValue(new Response(null, {
+        status, headers: { Location: `https://untrusted.example/?key=${key}` },
+      }));
+      const response = await handleAiRequest(request(), upstream);
+      expect(response.status).toBe(502);
+      const body = await response.text();
+      expect(body).toContain('重定向');
+      expect(body).not.toContain(key);
+      expect(body).not.toContain('untrusted');
+      expect(upstream).toHaveBeenCalledTimes(1);
+    }
+  });
+  it('distinguishes upstream transport failures from non-JSON responses without exposing details', async () => {
+    const failedFetch = vi.fn().mockRejectedValue(new Error(`private details ${key}`));
+    const network = await handleAiRequest(request(), failedFetch);
+    expect(await network.text()).toContain('后端服务器的出站网络');
+    const notJson = vi.fn().mockResolvedValue(new Response(`<html>${key}</html>`));
+    const malformed = await handleAiRequest(request(), notJson);
+    const text = await malformed.text();
+    expect(text).toContain('不是有效 JSON');
+    expect(text).not.toContain(key);
   });
   it('routes API errors through the worker and leaves static assets with ASSETS', async () => {
     const assets = { fetch: vi.fn().mockResolvedValue(new Response('static')) };

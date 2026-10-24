@@ -37,7 +37,10 @@ const SYSTEM_PROMPT = `你是荧光光谱干扰分析助手。输入仅为测量
 所有 regions 均为待确认建议，最多32个。`;
 
 /** Stateless BYOK relay: no environment key, storage, credential logs or arbitrary upstream URL. */
-export async function handleAiRequest(request: Request, upstream: typeof fetch = fetch): Promise<Response> {
+export async function handleAiRequest(
+  request: Request,
+  upstream: typeof fetch = (input, init) => globalThis.fetch(input, init),
+): Promise<Response> {
   const path = new URL(request.url).pathname;
   if (path !== '/api/ai/test' && path !== '/api/ai/analyze') return json({ error: '接口不存在' }, 404);
   if (request.method !== 'POST') return json({ error: '此接口只支持 POST' }, 405);
@@ -80,10 +83,21 @@ export async function handleAiRequest(request: Request, upstream: typeof fetch =
         ? { thinking: { type: 'disabled' }, max_tokens: isTest ? 32 : 4096 }
         : { reasoning_effort: 'low', max_completion_tokens: isTest ? 512 : 8192, store: false }),
     };
-    const response = await upstream(provider.endpoint, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-      body: JSON.stringify(body), signal: controller.signal, redirect: 'error',
-    });
+    let response: Response;
+    try {
+      response = await upstream(provider.endpoint, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+        // Workers does not implement redirect:"error". Inspect manual responses instead.
+        body: JSON.stringify(body), signal: controller.signal, redirect: 'manual',
+      });
+    } catch (error) {
+      if (controller.signal.aborted) throw error;
+      throw new HttpError(502, 'AI 转发服务无法连接所选服务商，请检查后端服务器的出站网络');
+    }
+    if (response.status >= 300 && response.status < 400) {
+      await response.body?.cancel();
+      throw new HttpError(502, 'AI 服务商返回了重定向，已停止请求以避免向其他地址转发密钥');
+    }
     if (!response.ok) {
       await response.body?.cancel();
       const status = response.status;
@@ -94,7 +108,12 @@ export async function handleAiRequest(request: Request, upstream: typeof fetch =
         : 'AI 服务暂时不可用，请稍后再试';
       throw new HttpError(status === 401 || status === 403 ? 401 : status === 402 ? 402 : status === 429 ? 429 : 502, message);
     }
-    const raw = JSON.parse(await limitedText(response.body, 100000));
+    let raw;
+    try { raw = JSON.parse(await limitedText(response.body, 100000)); }
+    catch (error) {
+      if (error instanceof HttpError || controller.signal.aborted) throw error;
+      throw new HttpError(502, 'AI 服务商返回的响应不是有效 JSON，请稍后重试或检查后端连接');
+    }
     const choice = raw?.choices?.[0];
     if (choice?.finish_reason !== 'stop' || typeof choice?.message?.content !== 'string' || !choice.message.content.trim())
       throw new HttpError(502, '模型输出为空或未完整结束，本次未应用任何处理');
@@ -108,7 +127,7 @@ export async function handleAiRequest(request: Request, upstream: typeof fetch =
     return json({ ...result, provider: providerId, model: data.model });
   } catch (error) {
     if (error instanceof HttpError) return json({ error: error.message }, error.status);
-    return json({ error: controller.signal.aborted ? '请求超时或已取消，请按需重试' : 'AI 请求失败，请检查网络后重试' }, controller.signal.aborted ? 504 : 502);
+    return json({ error: controller.signal.aborted ? '请求超时或已取消，请按需重试' : 'AI 转发接口处理异常，请检查后端部署与运行时配置' }, controller.signal.aborted ? 504 : 502);
   } finally {
     clearTimeout(timer);
     request.signal.removeEventListener('abort', abort);
