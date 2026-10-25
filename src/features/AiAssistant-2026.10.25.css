@@ -533,3 +533,11 @@
   font-size: 0.69rem;
   font-weight: 500;
 }
+.assistant-scan-range {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  margin: 14px 0;
+  min-width: 0;
+}
+.assistant-scan-range > strong { font-size: 0.85rem; }

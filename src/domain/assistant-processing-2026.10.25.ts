@@ -1,5 +1,6 @@
 import type { WaveRange } from '../../shared/ai-contract-2026.10.24';
 import type { Point } from './types';
+import { validateAssistantScanRange } from './assistant-scan-range-2026.10.26';
 
 /**
  * Deterministic numerical processing behind the AI assistant.
@@ -50,6 +51,8 @@ export interface AssistantBlankInput {
 }
 
 export interface AssistantProcessInput {
+  /** Processing/export window; original measurement rows are retained separately. */
+  scanRange?: WaveRange | null;
   points: Point[];
   /** Original source line numbers, aligned with points (for audit/export). */
   rowNumbers?: (number | null)[];
@@ -73,6 +76,7 @@ export type AssistantAnomalyStatus = 'repaired' | 'masked' | 'unresolved' | 'sug
 export interface AssistantPoint {
   /** Tombstone only in backing data; omitted from processed tables. */
   deleted?: boolean;
+  rangeExcluded?: boolean;
   index: number;
   x: number;
   original: number;
@@ -137,6 +141,7 @@ export interface AssistantMainPeak {
 }
 
 export interface AssistantProcessingResult {
+  scanRange?: WaveRange | null;
   editAudit?: import("./assistant-batch-edit").EditAudit[];
   editPlans?: { action: "apply" | "undo"; plan: import("../../shared/ai-chat-2026.10.25").BatchEditOperation }[];
   algorithmVersion: string;
@@ -514,6 +519,25 @@ function localInterpolation(
  * input; never mutates the caller's points or parameters.
  */
 export function processAssistantSpectrum(input: AssistantProcessInput): AssistantProcessingResult {
+  if (input.scanRange) {
+    const range = validateAssistantScanRange(input.points, input.scanRange);
+    const indices = input.points.flatMap((p, i) => p.x >= range.fromNm && p.x <= range.toNm ? [i] : []);
+    // Run detection, blank correction and peak protection only on the selected measurements.
+    const selected = processAssistantSpectrum({ ...input, scanRange: null,
+      points: indices.map(i => input.points[i]), rowNumbers: indices.map(i => input.rowNumbers?.[i] ?? null) });
+    const byIndex = new Map(selected.points.map((p, i) => [indices[i], { ...p, index: indices[i] }]));
+    const points: AssistantPoint[] = input.points.map((p, index) => byIndex.get(index) ?? {
+      index, x: p.x, original: p.y, blank: null, corrected: p.y, processed: p.y,
+      deleted: true, rangeExcluded: true, status: 'normal', anomalyKind: null, anomalyId: null,
+      method: '扫描范围筛选', reason: `位于所选闭区间 ${range.fromNm}–${range.toNm} nm 外，仅保留原始测量值`,
+      protected: false, rowNumber: input.rowNumbers?.[index] ?? null,
+    });
+    return { ...selected, scanRange: range, points,
+      anomalies: selected.anomalies.map(a => ({ ...a, fromIndex: indices[a.fromIndex], toIndex: indices[a.toIndex] })),
+      checks: selected.checks.map(c => c.key === 'rows' ? { ...c, label: '扫描范围与原始数据完整',
+        detail: `原始 ${points.length} 行完整保留；所选 ${range.fromNm}–${range.toNm} nm 闭区间内 ${indices.length} 行参与处理和导出。` } : c),
+    };
+  }
   const parameters = normalizeAssistantParameters(input.parameters);
   if (input.excitationNm !== null && (!Number.isFinite(input.excitationNm) || input.excitationNm <= 0))
     throw new Error('激发波长必须为正数；没有激发波长时请留空');
@@ -1023,6 +1047,7 @@ export function assistantProcessingKey(
   return hashString(
     JSON.stringify({
       points: input.points,
+      scanRange: input.scanRange ?? null,
       rowNumbers,
       excitationNm: input.excitationNm,
       solvent: input.solvent ?? '',
