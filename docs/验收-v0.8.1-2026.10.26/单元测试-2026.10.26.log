@@ -1,0 +1,35 @@
+
+> perovskite-lab@0.8.1 test
+> vitest run
+
+
+ RUN  v3.2.7 /Users/liuzhe/Documents/deepseek-harness/default-workspace/Perovskite-Lab
+
+ ✓ tests/workbook-v0.5.5-2026.10.22.test.ts (30 tests) 10ms
+ ✓ tests/ai-relay-2026.10.24.test.ts (12 tests) 19ms
+ ✓ tests/ai-processing-2026.10.24.test.ts (7 tests) 38ms
+ ✓ tests/ai-chat-2026.10.25.test.ts (12 tests) 30ms
+ ✓ tests/import.test.ts (15 tests) 54ms
+ ✓ tests/assistant-export-sync-2026.10.25.test.ts (7 tests) 61ms
+ ✓ tests/assistant-processing-2026.10.25.test.ts (8 tests) 14ms
+ ✓ tests/f7100-parse-2026.10.25.test.ts (10 tests) 17ms
+ ✓ tests/math.test.ts (12 tests) 5ms
+ ✓ tests/blank-axis-labels-2026.10.21.test.ts (3 tests) 9ms
+ ✓ tests/ai-assistant-relay-2026.10.25.test.ts (6 tests) 20ms
+ ✓ tests/chart-values-and-titles-v0.6.0.test.ts (12 tests) 16ms
+ ✓ tests/peak-raw-metadata-2026.10.22.test.ts (7 tests) 3ms
+ ✓ tests/paste-2026.10.18.test.ts (7 tests) 7ms
+ ✓ tests/chart-axes-v0.3.1-2026.10.19.test.ts (4 tests) 5ms
+ ✓ tests/raw-sheet-edit-v0.5.5.test.ts (8 tests) 4ms
+ ✓ tests/assistant-command-2026.10.25.test.ts (8 tests) 6ms
+ ✓ tests/legend-2026.10.22.test.ts (3 tests) 3ms
+ ✓ tests/worksheet-v0.2.0-2026.10.19.test.ts (10 tests) 8ms
+ ✓ tests/gradient-units-v0.3.2-2026.10.20.test.ts (5 tests) 5ms
+ ✓ tests/assistant-batch-edit-2026.10.25.test.ts (24 tests) 833ms
+   ✓ combined Excel and Sheet parity > exports three complete samples, deleted vs masked rows, full audit, parameters, and the same Sheet values  420ms
+
+ Test Files  21 passed (21)
+      Tests  210 passed (210)
+   Start at  00:05:53
+   Duration  1.23s (transform 654ms, setup 0ms, collect 1.67s, tests 1.17s, environment 2ms, prepare 1.02s)
+
