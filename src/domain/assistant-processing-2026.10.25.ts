@@ -71,6 +71,8 @@ export type AssistantAnomalyKind =
 export type AssistantAnomalyStatus = 'repaired' | 'masked' | 'unresolved' | 'suggested';
 
 export interface AssistantPoint {
+  /** Tombstone only in backing data; omitted from processed tables. */
+  deleted?: boolean;
   index: number;
   x: number;
   original: number;
@@ -135,6 +137,8 @@ export interface AssistantMainPeak {
 }
 
 export interface AssistantProcessingResult {
+  editAudit?: import("./assistant-batch-edit").EditAudit[];
+  editPlans?: { action: "apply" | "undo"; plan: import("../../shared/ai-chat-2026.10.25").BatchEditOperation }[];
   algorithmVersion: string;
   parameters: AssistantParameters;
   points: AssistantPoint[];
@@ -993,7 +997,7 @@ export function processedSegments(points: AssistantPoint[]): Point[][] {
   const segments: Point[][] = [];
   let run: Point[] = [];
   for (const point of points) {
-    if (point.processed === null) {
+    if (point.deleted || point.processed === null) {
       if (run.length) segments.push(run);
       run = [];
     } else run.push({ x: point.x, y: point.processed });
@@ -1061,7 +1065,7 @@ export function describeAssistantResult(result: AssistantProcessingResult) {
     `共 ${stats.points} 个测量点，识别 ${stats.anomalies} 个异常记录：局部修复 ${stats.repaired} 点，屏蔽 ${stats.masked} 点，保留待判断 ${stats.unresolved} 点。`,
     details ? `检测到：${details}${result.anomalies.length > 4 ? ' 等' : ''}。` : '',
     mainPeak
-      ? `主发射峰位于 ${mainPeak.originalX} nm，${stats.protectedPoints} 个点位于保护区内，保护区内未做修复或屏蔽。`
+      ? `主发射峰位于 ${mainPeak.originalX} nm，${stats.protectedPoints} 个点位于保护区内，${result.editPlans?.length ? '人工编辑及撤销见修改记录。' : '保护区内未做修复或屏蔽。'}`
       : '未自动识别主发射峰，请人工检查保护区。',
     result.scattering.length
       ? `发现 ${result.scattering.length} 个散射候选（${result.scattering.map((candidate) => candidate.label).join('、')}）；${result.parameters.maskScattering ? '已按当前设置屏蔽未与保护区重叠的候选。' : '当前仅标记，未屏蔽。'}`

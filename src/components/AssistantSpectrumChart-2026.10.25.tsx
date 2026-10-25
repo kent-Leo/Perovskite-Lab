@@ -42,17 +42,17 @@ export function AssistantSpectrumChart({
           });
         });
         const repaired = result.points
-          .filter((point) => point.status === 'repaired')
+          .filter((point) => !point.deleted && point.status === 'repaired')
           .map((point) => ({ x: point.x, y: point.processed as number }));
         if (repaired.length)
           series.push({ name: '已修复点', color: '#c58b2d', kind: 'scatter', points: repaired });
         const unresolved = result.points
-          .filter((point) => point.status === 'unresolved')
+          .filter((point) => !point.deleted && point.status === 'unresolved')
           .map((point) => ({ x: point.x, y: point.original }));
         if (unresolved.length)
           series.push({ name: '仅标记异常', color: '#d0693f', kind: 'scatter', points: unresolved });
         const masked = result.points
-          .filter((point) => point.status === 'masked')
+          .filter((point) => !point.deleted && point.status === 'masked')
           .map((point) => ({ x: point.x, y: point.original }));
         if (masked.length)
           series.push({ name: '屏蔽区间', color: '#a63f35', kind: 'scatter', points: masked });
@@ -79,7 +79,7 @@ export function AssistantSpectrumChart({
           <li><span style={{ background: '#c58b2d' }} />已修复点（局部插值）</li>
           <li><span style={{ background: '#d0693f' }} />仅标记异常</li>
           <li><span style={{ background: '#a63f35' }} />屏蔽区间（不连线）</li>
-          <li className="assistant-legend-note">保护区内的测量值不做任何修改</li>
+          <li className="assistant-legend-note">基础算法保护主峰；人工编辑另行确认</li>
         </ul>
       ) : (
         <ul className="assistant-legend" aria-label="光谱图例">

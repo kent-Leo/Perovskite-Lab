@@ -46,10 +46,12 @@ import {
   type SpectrumParseOptions,
 } from '../services/f7100-2026.10.25';
 import { requestAssistantAi, requestAssistantChat } from '../services/ai-assistant-client-2026.10.25';
+import { previewBatchEdit, commitBatchEdit, undoBatchEdit, replayBatchEdits, type BatchDocument, type BatchPreview } from '../domain/assistant-batch-edit';
 import { buildChatContext } from '../domain/assistant-context-2026.10.25';
 import { CHAT_LIMITS, recentChatHistory, validateChatReply, type ChatOperation } from '../../shared/ai-chat-2026.10.25';
 import {
   exportAssistantWorkbook,
+  exportAssistantBatchWorkbook,
   type AssistantAudit,
 } from '../services/assistant-export-2026.10.25';
 import {
@@ -98,6 +100,8 @@ interface AiState {
   recommendations: string[];
 }
 interface AssistantEntry {
+  epoch: number;
+  manualRevision: { base: string; version: string } | null;
   id: string;
   file: File;
   bytes: Uint8Array;
@@ -202,18 +206,40 @@ function buildInput(entry: AssistantEntry, entries: AssistantEntry[]): Assistant
   };
 }
 
+function baseEntryKey(entry: AssistantEntry, entries: AssistantEntry[]) {
+  const input = buildInput(entry, entries);
+  return input ? `${assistantProcessingKey(input, entry.parse?.rowNumbers ?? [])}-${entry.epoch}` : '';
+}
+function entryKey(entry: AssistantEntry, entries: AssistantEntry[]) {
+  const base = baseEntryKey(entry, entries);
+  return entry.manualRevision ? entry.manualRevision.base === base ? entry.manualRevision.version
+    : `${base}-${entry.manualRevision.version}` : base;
+}
+function batchDocument(entry: AssistantEntry, entries: AssistantEntry[]): BatchDocument {
+  if (!entry.parse || !entry.result || entryKey(entry, entries) !== entry.resultKey)
+    throw new Error(`${entry.file.name}：请先重新生成有效预览`);
+  return { id: entry.id, name: entry.file.name, version: entry.resultKey, result: entry.result };
+}
+
 function computeEntry(entry: AssistantEntry, entries: AssistantEntry[]) {
   try {
     const input = buildInput(entry, entries);
-    if (!input) return { result: null, resultKey: '', processError: '' };
+    if (!input) return { result: null, resultKey: '', processError: '', manualRevision: null };
     const result = processAssistantSpectrum(input);
+    if (entry.result?.editPlans?.length) {
+      const base = baseEntryKey(entry, entries);
+      const replayed = replayBatchEdits({ id: entry.id, name: entry.file.name, version: base, result }, entry.result);
+      return { result: replayed.result, resultKey: replayed.version, processError: '', manualRevision: { base, version: replayed.version } };
+    }
     return {
       result,
-      resultKey: assistantProcessingKey(input, entry.parse?.rowNumbers ?? []),
+      resultKey: baseEntryKey(entry, entries),
+      manualRevision: null,
       processError: '',
     };
   } catch (e) {
-    return { result: null, resultKey: '', processError: (e as Error).message };
+    // Preserve the last full snapshot and its audit when a new baseline/replay fails.
+    return { result: entry.result, resultKey: entry.resultKey, processError: (e as Error).message, manualRevision: entry.manualRevision };
   }
 }
 
@@ -236,6 +262,7 @@ async function createEntry(file: File): Promise<AssistantEntry> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   const base: AssistantEntry = {
     id: crypto.randomUUID(),
+    epoch: 0, manualRevision: null,
     file,
     bytes,
     parse: null,
@@ -277,6 +304,14 @@ async function createEntry(file: File): Promise<AssistantEntry> {
   }
 }
 
+function describeBatchEdit(edit: import('../../shared/ai-chat-2026.10.25').BatchEdit) {
+  const labels = { 'delete-range': '删除数据行', 'mask-range': '屏蔽强度', 'keep-range': '仅保留区间',
+    'set-point': '指定处理后强度', offset: '强度偏移', scale: '强度缩放', normalize: '最大绝对值归一化' };
+  const range = edit.type === 'set-point' ? `${edit.wavelengthNm} nm` : `${edit.fromNm}–${edit.toNm} nm（闭区间）`;
+  const value = 'value' in edit ? `，数值 ${edit.value}` : 'target' in edit ? `，目标 ${edit.target}` : '';
+  return `${labels[edit.type]}：${range}${value}。理由：${edit.reason}`;
+}
+
 function classificationLabel(value: string) {
   return (
     {
@@ -312,6 +347,15 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
   const { credentials, redactSecrets } = useAiSession();
   const [entries, setEntries] = useState<AssistantEntry[]>([]);
   const [activeId, setActiveId] = useState('');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [batchPreview, setBatchPreview] = useState<BatchPreview | null>(null);
+  const [batchTransaction, setBatchTransaction] = useState<BatchPreview | null>(null);
+  const [redoPlan, setRedoPlan] = useState<BatchPreview['plan'] | null>(null);
+  const [batchError, setBatchError] = useState('');
+  const [batchConfirmed, setBatchConfirmed] = useState(false);
+  const [allowProtected, setAllowProtected] = useState(false);
+  const [batchExporting, setBatchExporting] = useState(false);
+
   const [consent, setConsent] = useState(false);
   const [autoSync, setAutoSync] = useState(true);
   const [uploadError, setUploadError] = useState('');
@@ -320,6 +364,8 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
   const [chatDrafts, setChatDrafts] = useState<Record<string, string>>({});
   const [generalMessages, setGeneralMessages] = useState<ChatMessage[]>([]);
   const [chatStatus, setChatStatus] = useState<Record<string, { busy: boolean; error: string }>>({});
+  const latestEntries = useRef(entries); latestEntries.current = entries;
+  const latestSelection = useRef(selectedIds); latestSelection.current = selectedIds;
   const chatRequests = useRef(new Map<string, AbortController>());
   const chatLog = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -336,8 +382,7 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
   const draftKey = useMemo(() => {
     if (!active?.parse) return '';
     try {
-      const input = buildInput(active, entries);
-      return input ? assistantProcessingKey(input, active.parse.rowNumbers) : '';
+      return entryKey(active, entries);
     } catch {
       return '';
     }
@@ -383,7 +428,11 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
     setEntries((previous) =>
       previous.map((entry) =>
         entry.id === id
-          ? { ...entry, ...(typeof patch === 'function' ? patch(entry) : patch) }
+          ? (() => {
+              const change = typeof patch === 'function' ? patch(entry) : patch;
+              const dirty = ['parameters', 'excitation', 'solvent', 'blankId', 'subtractBlank', 'blankSameConditions'].some(k => k in change);
+              return { ...entry, ...change, ...(dirty && !('resultKey' in change) ? { epoch: entry.epoch + 1, confirmed: null } : {}) };
+            })()
           : entry,
       ),
     );
@@ -400,7 +449,7 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
     setEntries((previous) =>
       previous.map((entry) => {
         if (entry.id !== id) return entry;
-        const updated = { ...entry, ...overrides };
+        const updated = { ...entry, ...overrides, epoch: entry.epoch + 1 };
         const computed = computeEntry(
           updated,
           previous.map((candidate) => (candidate.id === id ? updated : candidate)),
@@ -448,6 +497,7 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
         }
       }
       setEntries((previous) => [...previous, ...created]);
+      setSelectedIds(previous => [...previous, ...created.map(e => e.id)]);
       if (created[0]) setActiveId(created[0].id);
     } finally {
       setUploading(false);
@@ -462,6 +512,7 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
       const parsed = parseSpectrumBytes(entry.bytes, entry.file.name, parseOptions(entry));
       const updated: AssistantEntry = {
         ...entry,
+        epoch: entry.epoch + 1,
         parse: parsed,
         parseError: '',
         excitation: entry.excitation.trim() || parsed.metadata.excitationNm?.toString() || '',
@@ -522,6 +573,7 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
   }
 
   function removeEntry(id: string) {
+    setSelectedIds(previous => previous.filter(v => v !== id));
     chatRequests.current.get(id)?.abort();
     chatRequests.current.delete(id);
     setChatDrafts((previous) => { const next = { ...previous }; delete next[id]; return next; });
@@ -835,12 +887,26 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
     if (!entry?.parse) return null;
     const input = buildInput(entry, entries);
     if (!input) return null;
-    const revision = assistantProcessingKey(input, entry.parse.rowNumbers);
-    return buildChatContext({ id: entry.id, revision, parse: entry.parse, parameters: entry.parameters,
+    const revision = entryKey(entry, entries);
+    const context = buildChatContext({ id: entry.id, revision, parse: entry.parse, parameters: entry.parameters,
       result: entry.result, stale: entry.resultKey !== revision,
       confirmed: entry.confirmed?.key === revision && entry.resultKey === revision,
       excitationNm: input.excitationNm, solvent: entry.solvent, hasBlank: !!input.blank, subtractBlank: entry.subtractBlank,
       blankSameConditions: entry.blankSameConditions }, question);
+    context.selectedFiles = entries.filter(e => selectedIds.includes(e.id)).map(e => {
+      if (!e.parse || !e.result) throw new Error(`${e.file.name}：没有有效测量数据`);
+      const doc = { result: e.result, version: entryKey(e, entries) }, points = e.parse.points;
+      const maximum = points.reduce((a, b) => a.y > b.y ? a : b);
+      const live = doc.result.points.filter(p => !p.deleted && p.processed !== null);
+      const peak = live.reduce<(typeof live)[number] | null>((a, b) => !a || b.processed! > a.processed! ? b : a, null);
+      return { id: e.id, name: e.file.name, version: doc.version,
+        state: e.resultKey !== doc.version ? 'stale' as const : e.confirmed?.key === doc.version ? 'confirmed' as const : 'preview' as const,
+        scanRange: { fromNm: points[0].x, toNm: points.at(-1)!.x }, pointCount: points.length,
+        summary: { remaining: doc.result.points.filter(p => !p.deleted).length,
+          deleted: doc.result.points.filter(p => p.deleted).length,
+          masked: doc.result.points.filter(p => !p.deleted && p.processed === null).length, maximum, processedMaximum: peak ? { x: peak.x, y: peak.processed! } : null } };
+    });
+    return context;
   }
 
   function cancelChat(id = chatId) {
@@ -886,6 +952,16 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
       const response = await requestAssistantChat(credentials, { question: text, history, context }, controller.signal);
       // Deleted/cleared/cancelled conversations cannot be revived by late responses.
       if (chatRequests.current.get(id) !== controller || controller.signal.aborted) return;
+      if (context) {
+        const latest = latestEntries.current.find(e => e.id === context.sessionId);
+        const files = context.selectedFiles ?? [];
+        const invalid = !latest || entryKey(latest, latestEntries.current) !== context.revision ||
+          files.length !== latestSelection.current.length || files.some(f => {
+            const current = latestEntries.current.find(e => e.id === f.id);
+            return !current || !latestSelection.current.includes(f.id) || entryKey(current, latestEntries.current) !== f.version;
+          });
+        if (invalid) { error('模型返回前文件选择或版本已变化，本次回复已失效，请重新提问。'); return; }
+      }
       const reply: ChatMessage = { ...chatMessage('assistant', redactSecrets(response.reply), 'model'),
         operation: response.operation, model: credentials.model };
       updateChatMessages(id, (current) => [...current, reply]);
@@ -904,20 +980,110 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
 
   function applyChatOperation(message: ChatMessage) {
     if (!active?.parse || !message.operation || message.applied) return;
+    if (message.operation.type === 'batch-edit') { setBatchPreview(null); setBatchConfirmed(false); setAllowProtected(false); }
     try {
       const context = currentChatContext(active, '');
       const operation = validateChatReply({ reply: message.text, operation: message.operation }, context).operation!;
+      if (operation.type === 'batch-edit') {
+        const docs = entries.filter(e => selectedIds.includes(e.id)).map(e => batchDocument(e, entries));
+        setBatchPreview(previewBatchEdit(docs, operation));
+        setBatchConfirmed(false); setAllowProtected(false); setBatchError('');
+        return;
+      }
       const parameters = { ...active.parameters, ...operation.parameters };
-      const updated = { ...active, parameters, confirmed: null };
+      const updated = { ...active, parameters, confirmed: null, epoch: active.epoch + 1 };
       const computed = computeEntry(updated, entries.map((e) => e.id === active.id ? updated : e));
       if (!computed.result || computed.processError) throw new Error(computed.processError || '未生成有效预览');
-      patchEntry(active.id, (entry) => ({ parameters, ...computed, ai: null, confirmed: null, actionError: '',
+      patchEntry(active.id, (entry) => ({ parameters, epoch: updated.epoch, ...computed, ai: null, confirmed: null, actionError: '',
         messages: [...entry.messages.map((m) => m.id === message.id ? { ...m, applied: true } : m),
           chatMessage('assistant', `已由本地算法生成新预览：${describeAssistantResult(computed.result!)} 请核对图表和处理记录，再点击“确认处理结果”。`)].slice(-100) }));
     } catch (e) {
       setChatStatus((previous) => ({ ...previous, [chatId]: { busy: false,
         error: `建议未应用：${(e as Error).message}。文件或参数变化后请重新提问。` } }));
     }
+  }
+
+  function selectedDocuments() {
+    return entries.filter(e => selectedIds.includes(e.id)).map(e => batchDocument(e, entries));
+  }
+  function previewIsCurrent() {
+    if (!batchPreview) return false;
+    try {
+      const docs = selectedDocuments();
+      return docs.length === batchPreview.before.length && batchPreview.before.every(b => docs.some(d => d.id === b.id && d.version === b.version));
+    } catch { return false; }
+  }
+  // Build every Sheet patch first, then write the workspace once. No partially synced batch.
+  function installBatch(docs: BatchDocument[]) {
+    let workspace = w;
+    const installed = new Map<string, AssistantEntry>();
+    for (const doc of docs) {
+      const entry = entries.find(e => e.id === doc.id)!;
+      const next: AssistantEntry = { ...entry, result: doc.result, resultKey: doc.version,
+        manualRevision: { base: baseEntryKey(entry, entries), version: doc.version },
+        confirmed: { key: doc.version, result: doc.result, at: dateStamp() }, ai: null };
+      if (autoSync || entry.sync) {
+        const outcome = syncAssistantResult(workspace, { parsed: entry.parse!, result: doc.result,
+          audit: buildAudit(entry, doc.result), unit: w.calUnit }, {
+          mode: entry.sync ? 'update' : 'create', targetSheetId: entry.sync?.sheetId,
+          sheetName: entry.sync?.sheetName ?? baseAiSheetName(entry.file.name),
+        });
+        workspace = { ...workspace, ...outcome.patch };
+        next.sync = { key: doc.version, sheetId: outcome.sheetId, sheetName: outcome.sheetName,
+          version: (entry.sync?.version ?? 0) + 1, at: timestamp() };
+      }
+      installed.set(doc.id, next);
+    }
+    if (workspace !== w) update(workspace);
+    setEntries(previous => previous.map(e => installed.get(e.id) ?? e));
+  }
+  function confirmBatch() {
+    if (!batchPreview || !batchConfirmed) return;
+    try {
+      if (!previewIsCurrent()) throw new Error('文件选择或版本已变化，请重新生成批量预览');
+      const after = commitBatchEdit(selectedDocuments(), batchPreview, allowProtected);
+      installBatch(after);
+      setBatchTransaction({ ...batchPreview, after }); setRedoPlan(null); setBatchPreview(null); setBatchError('');
+      notify('已确认整批编辑，原始测量数据完整保留');
+    } catch (e) { setBatchError((e as Error).message); }
+  }
+  function undoBatch() {
+    if (!batchTransaction) return;
+    try {
+      const docs = batchTransaction.after.map(d => {
+        const entry = entries.find(e => e.id === d.id);
+        if (!entry) throw new Error('文件已移除，无法撤销');
+        return batchDocument(entry, entries);
+      });
+      installBatch(undoBatchEdit(docs, batchTransaction));
+      setRedoPlan(batchTransaction.plan); setBatchTransaction(null); setBatchPreview(null); setBatchError('');
+      notify('已撤销整批编辑，审计记录已保留');
+    } catch (e) { setBatchError((e as Error).message); }
+  }
+  function previewRedo() {
+    if (!redoPlan || !active) return;
+    try {
+      const docs = selectedDocuments();
+      if (docs.length !== redoPlan.targets.length || redoPlan.targets.some(t => !docs.some(d => d.id === t.fileId)))
+        throw new Error('请选择原批次的全部文件后重新应用');
+      const plan = { ...redoPlan, sessionId: active.id, revision: entryKey(active, entries),
+        targets: docs.map(d => ({ fileId: d.id, version: d.version })) };
+      setBatchPreview(previewBatchEdit(docs, plan)); setBatchConfirmed(false); setAllowProtected(false); setBatchError('');
+    } catch (e) { setBatchError((e as Error).message); }
+  }
+  const selectedEntries = entries.filter(e => selectedIds.includes(e.id));
+  const canBatchExport = selectedEntries.length > 0 && selectedEntries.every(e => {
+    try { return e.confirmed?.key === entryKey(e, entries) && e.confirmed?.key === e.resultKey; } catch { return false; }
+  });
+  async function exportBatch() {
+    if (!canBatchExport || batchExporting) return;
+    setBatchExporting(true); setBatchError('');
+    try {
+      await exportAssistantBatchWorkbook(selectedEntries.map(e => ({ id: e.id, version: e.confirmed!.key,
+        parsed: e.parse!, result: e.confirmed!.result, audit: buildAudit(e, e.confirmed!.result) })));
+      notify('全部所选光谱及审计记录已合并导出');
+    } catch (e) { setBatchError((e as Error).message); }
+    finally { setBatchExporting(false); }
   }
 
   function runLocalCommand(text: string) {
@@ -935,7 +1101,7 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
     if (command.action === 'recompute' || command.action === 'reset') {
       const parameters = command.parameters;
       const subtractBlank = command.process.subtractBlank ?? active.subtractBlank;
-      const updated: AssistantEntry = { ...active, parameters, subtractBlank };
+      const updated: AssistantEntry = { ...active, parameters, subtractBlank, epoch: active.epoch + 1 };
       const computed = computeEntry(
         updated,
         entries.map((entry) => (entry.id === active.id ? updated : entry)),
@@ -1042,8 +1208,8 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
             </div>
             <p>{message.text}</p>
             {message.operation && <div className="assistant-operation">
-              <strong>待应用参数建议</strong>
-              <pre>{JSON.stringify(message.operation.parameters, null, 2)}</pre>
+              <strong>{message.operation.type === 'batch-edit' ? '待确认批量编辑计划' : '待应用参数建议'}</strong>
+              {message.operation.type === 'batch-edit' ? message.operation.edits.map((edit, i) => <p key={i}>{describeBatchEdit(edit)}</p>) : <pre>{JSON.stringify(message.operation.parameters, null, 2)}</pre>}
               <p>应用后仅生成处理预览，请检查图表并确认结果后再导出或同步。</p>
               <button className="small-button" disabled={message.applied || message.operation.revision !== draftKey}
                 onClick={() => applyChatOperation(message)}>
@@ -1145,6 +1311,43 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
         </div>
         {uploadError && <ErrorNote>{uploadError}</ErrorNote>}
       </div>
+
+      {entries.length > 0 && <section className="assistant-card" aria-label="批量光谱编辑">
+        <h3>批量光谱编辑</h3>
+        <p>选择参与对话的文件。区间单位为 nm，含起点和终点；删除移除处理后数据行，屏蔽保留波长并将强度留空。</p>
+        <div className="assistant-quick-commands">
+          <button className="small-button" onClick={() => setSelectedIds(entries.map(e => e.id))}>选择全部文件</button>
+          {entries.map(e => <label key={e.id}><input type="checkbox" aria-label={`批量选择 ${e.file.name}`}
+            checked={selectedIds.includes(e.id)} onChange={event => setSelectedIds(ids => event.target.checked ? [...ids, e.id] : ids.filter(id => id !== e.id))} />{e.file.name}</label>)}
+        </div>
+        <p>已选择 {selectedEntries.length} 个文件。在下方对话中描述批量操作，再点击“应用建议并生成预览”。</p>
+        {batchPreview && <div className="assistant-operation" aria-label="批量编辑预览">
+          <h4>操作预览（尚未提交）</h4>
+          {batchPreview.plan.edits.map((edit, i) => <p key={i}>{describeBatchEdit(edit)}</p>)}
+          {batchPreview.impacts.map(i => <p key={i.id}>{i.name}：受影响 {i.affected} 行；删除 {i.deleted} 行；屏蔽 {i.masked} 行；数值修改 {i.changed} 行；主峰风险 {i.protected} 行</p>)}
+          <div style={{ overflowX: 'auto', maxHeight: 260 }}>
+            <table><thead><tr><th>文件</th><th>源行号</th><th>波长 nm</th><th>修改前</th><th>修改后</th><th>理由</th></tr></thead>
+              <tbody>{batchPreview.after.flatMap((d, i) => (d.result.editAudit ?? []).slice(batchPreview.before[i].result.editAudit?.length ?? 0)
+                .slice(0, 30).map((a, index) => <tr key={`${d.id}-${index}`}><td>{d.name}</td><td>{a.rowNumber}</td><td>{a.wavelengthNm}</td>
+                  <td>{a.beforeDeleted ? '删除' : a.before ?? '屏蔽'}</td><td>{a.afterDeleted ? '删除' : a.after ?? '屏蔽'}</td><td>{a.reason}</td></tr>))}</tbody></table>
+          </div>
+          <p>逐点明细每文件显示前 30 条；统计覆盖本地全部数据，完整记录随 Excel 导出。</p>
+          {batchPreview.impacts.some(i => i.protected > 0) && <label><input type="checkbox" checked={allowProtected}
+            onChange={e => setAllowProtected(e.target.checked)} />我已核对主峰风险，允许本计划修改保护区</label>}
+          <label><input type="checkbox" checked={batchConfirmed} onChange={e => setBatchConfirmed(e.target.checked)} />我已核对逐文件影响，确认提交整批编辑</label>
+          <button className="primary" disabled={!batchConfirmed || !previewIsCurrent() || (batchPreview.impacts.some(i => i.protected) && !allowProtected)}
+            onClick={confirmBatch}>确认批量编辑</button>
+          <button className="small-button" onClick={() => setBatchPreview(null)}>取消批量预览</button>
+          {!previewIsCurrent() && <ErrorNote>文件选择或版本已变化，旧预览已失效，请重新提问。</ErrorNote>}
+        </div>}
+        <div className="assistant-ai-actions">
+          <button className="small-button" disabled={!batchTransaction} onClick={undoBatch}>撤销上次批量编辑</button>
+          <button className="small-button" disabled={!redoPlan} onClick={previewRedo}>重新应用批量编辑</button>
+          <button className="primary" disabled={!canBatchExport || batchExporting} onClick={() => void exportBatch()}>统一导出 Excel</button>
+        </div>
+        {!canBatchExport && <p>统一导出需要所有所选文件的当前结果均已确认。</p>}
+        {batchError && <ErrorNote>{batchError}</ErrorNote>}
+      </section>}
 
       {entries.length > 0 && (
         <div className="assistant-file-bar" role="tablist" aria-label="已上传光谱文件">

@@ -99,7 +99,7 @@ export function buildAssistantSheetBundle(input: AssistantSheetBuildInput): Assi
   const base = parsed.fileName.replace(/\.[^.]+$/, '');
   const originalPoints = result.points.map((point) => ({ x: point.x, y: point.original }));
   const processedPoints = result.points
-    .filter((point) => point.processed !== null)
+    .filter((point) => !point.deleted && point.processed !== null)
     .map((point) => ({ x: point.x, y: point.processed as number }));
   const original = originalSpectrum(originalPoints, `${base} · 原始`, source, unit);
   const processed = processedSpectrum(processedPoints, `${base} · AI处理`, source, unit);

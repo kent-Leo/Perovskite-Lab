@@ -33,7 +33,7 @@ export async function requestAssistantChat(
     ? redactChatSecrets((result as { error: string }).error, [credentials.apiKey]) : `AI 请求失败（HTTP ${response.status}）`);
   // Provider/model envelope is metadata, not an operation field.
   const envelope = result as Record<string, unknown>;
-  return validateChatReply({ reply: envelope.reply, operation: envelope.operation }, canonical.context);
+  return validateChatReply(JSON.parse(redactChatSecrets(JSON.stringify({ reply: envelope.reply, operation: envelope.operation }), [credentials.apiKey])), canonical.context);
 }
 
 /** Sends only canonical, validated data to the same-origin Worker relay. */
