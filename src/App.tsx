@@ -17,6 +17,7 @@ import {
   Check,
   Layers3,
   Menu,
+  Sparkles,
   X,
 } from 'lucide-react';
 import { useWorkspace, demoWorkspace, blankWorkspace } from './state/workspace';
@@ -24,6 +25,7 @@ import { Spectra } from './features/Spectra';
 import { Screening } from './features/Screening';
 import { Calibration } from './features/Calibration';
 import { Gradient } from './features/Gradient';
+import { AiAssistant } from './features/AiAssistant-2026.10.25';
 import { ImportDialog } from './components/ImportDialog';
 import { PasteSpectraTable } from './components/PasteSpectraTable-2026.10.18';
 import { ErrorNote } from './components/ui';
@@ -36,6 +38,12 @@ const pages = [
     label: '光谱工作台',
     icon: Activity,
     detail: '导入原始数据，完成光谱分析与科研绘图。',
+  },
+  {
+    id: 'assistant',
+    label: 'AI 光谱助手',
+    icon: Sparkles,
+    detail: '上传 F-7100 TXT，自动识别杂峰与散射干扰，保护真实发射峰，并导出或同步处理结果。',
   },
   {
     id: 'screening',
@@ -139,7 +147,7 @@ export default function App() {
         </div>
         <div className="nav-label">数据分析</div>
         <nav>
-          {pages.slice(0, 4).map((p) => (
+          {pages.slice(0, 5).map((p) => (
             <a
               key={p.id}
               href={`#${p.id}`}
@@ -222,7 +230,7 @@ export default function App() {
                 <RotateCcw size={16} />
                 载入示例
               </button>
-              {page !== 'gradient' && page !== 'extensions' && (
+              {(page === 'spectra' || page === 'screening' || page === 'calibration') && (
                 <button
                   className="primary"
                   onClick={() =>
@@ -304,6 +312,10 @@ export default function App() {
               <Spectra />
             </>
           )}
+          {/* Keep the assistant mounted so uploads, chat and unconfirmed results survive page switching. */}
+          <div hidden={page !== 'assistant'}>
+            <AiAssistant onOpenWorkspace={() => navigate('spectra')} />
+          </div>
           {page === 'screening' && <Screening onImport={() => openImport('objects')} />}
           {page === 'calibration' && <Calibration onImport={() => openImport('calibration')} />}
           {page === 'gradient' && <Gradient />}
