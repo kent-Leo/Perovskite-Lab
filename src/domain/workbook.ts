@@ -597,6 +597,68 @@ export function createSheet(
   return switchSheet(staged, page, tab.id);
 }
 
+function uniqueSheetName(tabs: WorkbookTab[], requested: string, page: WorkbookId) {
+  const fallback = DEFAULT_SHEET_NAMES[page];
+  const base = (requested.trim() || fallback).slice(0, 40);
+  let name = base,
+    suffix = 2;
+  const taken = new Set(tabs.map((tab) => tab.name.trim().toLowerCase()));
+  while (taken.has(name.toLowerCase())) {
+    const marker = ` (${suffix++})`;
+    name = `${base.slice(0, Math.max(1, 40 - marker.length))}${marker}`;
+  }
+  return name;
+}
+
+/**
+ * Create a sheet with an explicit payload and name, then activate it.
+ * Used by the AI assistant so a confirmed result becomes a normal editable
+ * spectrum sheet without going through Excel.
+ */
+export function createSheetWithPayload(
+  w: WorkbookHost,
+  page: WorkbookId,
+  requestedName: string,
+  payload: SheetPayload,
+): Partial<WorkbookHost> {
+  const wb = workbookOf(w, page);
+  if (wb.tabs.length >= MAX_SHEETS)
+    throw new Error(`每个表格最多 ${MAX_SHEETS} 个 Sheet，请先删除旧 Sheet 或在光谱工作台管理`);
+  const ids = new Set(wb.tabs.map((tab) => tab.id));
+  let id = `${page}-${Date.now().toString(36)}`,
+    counter = 2;
+  while (ids.has(id)) id = `${page}-${Date.now().toString(36)}-${counter++}`;
+  const tab: WorkbookTab = { id, name: uniqueSheetName(wb.tabs, requestedName, page) };
+  const staged: WorkbookHost = {
+    ...w,
+    workbooks: workbooksWith(w, page, {
+      tabs: [...wb.tabs, tab],
+      activeId: wb.activeId,
+      store: { ...wb.store, [tab.id]: payload },
+    }),
+  };
+  return switchSheet(staged, page, tab.id);
+}
+
+/** Replace one sheet's payload in place, active or stored. */
+export function writeSheetPayload(
+  w: WorkbookHost,
+  page: WorkbookId,
+  sheetId: string,
+  payload: SheetPayload,
+): Partial<WorkbookHost> {
+  const wb = workbookOf(w, page);
+  if (!wb.tabs.some((tab) => tab.id === sheetId))
+    throw new Error('目标 Sheet 已不存在，请重新创建或选择其他 Sheet');
+  if (sheetId === wb.activeId) return applyPayload(w, page, payload);
+  return {
+    workbooks: workbooksWith(w, page, {
+      ...wb,
+      store: { ...wb.store, [sheetId]: payload },
+    }),
+  };
+}
+
 /** Rename the active sheet; the legacy sheetNames entry follows the original tab. */
 export function renameSheet(
   w: WorkbookHost,

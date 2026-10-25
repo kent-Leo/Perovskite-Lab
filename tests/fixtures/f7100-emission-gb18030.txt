@@ -1,0 +1,49 @@
+Sample:	'样品A
+File name:	样品A.FDS
+Run date:	'11:18:14, 10/23/2026 - 11:18:21, 10/23/2026
+Operator:	TEST
+Comment:	'
+
+Instrument
+Model:	F-7100 FL Spectrophotometer
+Serial number:	0000-000
+ROM Version:	TEST
+
+Instrument parameters
+Measurement type:	Wavelength scan
+Scan mode:	Emission
+Data mode:	Fluorescence
+EX WL:	360.0 nm
+EM  Start WL:	400.0 nm
+EM  End WL:	410.0 nm
+Scan speed:	30000 nm/min
+Delay:	0.0 s
+EX Slit:	2.5 nm
+EM Slit:	2.5 nm
+PMT Voltage:	500 V
+Response:	0.002 s
+Corrected spectra:	Off
+Shutter control:	Off
+
+Peak integration
+Integration method:	Rectangular
+Sensitivity:	1
+Threshold:	1.000
+
+Peaks
+No.	Start(nm)	Apex(nm)	End(nm)	Height(Data)	Valley(nm)	Valley(Data)
+1	400.0	405.0	410.0	100.0	410.0	1.000
+
+Data points
+nm	Data
+400.0	1.000
+401.0	1.100
+402.0	1.200
+403.0	1.300
+404.0	1.100
+405.0	100.000
+406.0	1.200
+407.0	1.100
+408.0	1.000
+409.0	0.900
+410.0	0.800
