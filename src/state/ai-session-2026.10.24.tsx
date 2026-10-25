@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AI_PROVIDERS, type AiProvider } from '../../shared/ai-contract-2026.10.24';
 import type { AiCredentials } from '../services/ai-client-2026.10.24';
+import { redactChatSecrets } from '../../shared/ai-chat-2026.10.25';
 export const AI_STORAGE_KEY = 'perovskite-lab-ai-credentials-v1';
 interface AiSettings {
   version: 1;
@@ -45,6 +46,7 @@ const Context = createContext<{
   clearKey: () => void;
   clearAllKeys: () => void;
   storageError: string;
+  redactSecrets: (text: string) => string;
 } | null>(null);
 /** Dedicated local storage, separate from workspace/backup/export serialization. No server persistence. */
 export function AiSessionProvider({ children }: { children: ReactNode }) {
@@ -90,6 +92,7 @@ export function AiSessionProvider({ children }: { children: ReactNode }) {
   }, []);
   const credentials: AiCredentials = { provider: settings.provider, ...settings.accounts[settings.provider] };
   return <Context.Provider value={{ credentials, storageError,
+    redactSecrets: (text) => redactChatSecrets(text, providerIds.map((id) => current.current.accounts[id].apiKey)),
     setKey: (apiKey) => setAccount({ apiKey }),
     // Each provider has its own key/model. Switching never borrows another provider's key.
     setProvider: (provider) => commit({ ...current.current, provider }),

@@ -8,6 +8,33 @@ import {
   type AssistantSuggestion,
 } from '../../shared/ai-assistant-2026.10.25';
 import type { AiCredentials } from './ai-client-2026.10.24';
+import { redactChatSecrets, validateChatInput, validateChatReply, type ChatInput, type ChatReply } from '../../shared/ai-chat-2026.10.25';
+
+export async function requestAssistantChat(
+  credentials: AiCredentials, input: ChatInput, signal: AbortSignal,
+): Promise<ChatReply> {
+  if (!credentials.apiKey.trim()) throw new Error('请先在 AI 设置中填写个人 API Key');
+  // Redact pasted credentials before validation or network serialization.
+  const canonical = validateChatInput(JSON.parse(redactChatSecrets(JSON.stringify(input), [credentials.apiKey])));
+  const body = JSON.stringify({ provider: credentials.provider, model: credentials.model, input: canonical });
+  if (new TextEncoder().encode(body).length > MAX_AI_BYTES) throw new Error('聊天上下文过大，请清除部分历史后重试');
+  let response: Response;
+  try {
+    response = await fetch('/api/ai/chat', { method: 'POST', cache: 'no-store', signal,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${credentials.apiKey}` }, body });
+  } catch (error) {
+    if (signal.aborted) throw error;
+    throw new Error('网络连接失败，请检查网络后重试');
+  }
+  let result: unknown;
+  try { result = await response.json(); }
+  catch { throw new Error('聊天后端未就绪或返回了无效响应，请检查 Worker 部署'); }
+  if (!response.ok) throw new Error(result && typeof result === 'object' && typeof (result as { error?: unknown }).error === 'string'
+    ? redactChatSecrets((result as { error: string }).error, [credentials.apiKey]) : `AI 请求失败（HTTP ${response.status}）`);
+  // Provider/model envelope is metadata, not an operation field.
+  const envelope = result as Record<string, unknown>;
+  return validateChatReply({ reply: envelope.reply, operation: envelope.operation }, canonical.context);
+}
 
 /** Sends only canonical, validated data to the same-origin Worker relay. */
 export async function requestAssistantAi(

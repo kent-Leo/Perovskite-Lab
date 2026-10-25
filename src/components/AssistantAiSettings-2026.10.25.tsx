@@ -36,7 +36,7 @@ export function AssistantAiSettings({
       if (!consent) throw new Error('请先勾选数据发送与个人账户计费说明');
       setBusy(true);
       await requestAi(credentials, null, current.signal);
-      setStatus('连接成功，可以使用当前密钥和模型进行异常分类分析');
+      setStatus('连接成功，可以使用当前密钥和模型进行多轮问答与异常分类');
     } catch (e) {
       setError(current.signal.aborted ? '请求超时或已取消，可按需重试' : (e as Error).message);
     } finally {
@@ -117,8 +117,9 @@ export function AssistantAiSettings({
       <label className="assistant-consent">
         <input type="checkbox" checked={consent} onChange={(e) => onConsentChange(e.target.checked)} />
         <span>
-          我同意：点击“AI 辅助分类”时，将当前光谱的波长与强度、激发波长、溶剂、保护区和本地检测到的异常记录发送给{' '}
-          {provider.name}；密钥经本站后端临时转发，服务器不保存密钥。AI 仅返回文字分类与建议，不会直接修改任何强度值；费用由我的 API 账户承担。
+          我同意：发送消息或重新生成回复时，将问题、最近的有界对话历史、当前文件名称、光谱指标、处理参数和选取的原始测量点发送给{' '}
+          {provider.name}；点击“AI 辅助分类”会发送当前光谱及异常摘要。密钥经本站后端临时转发，服务器不保存密钥。
+          AI 仅返回文字与待确认参数建议；所有数值处理由本地算法执行，费用由我的 API 账户承担。
         </span>
       </label>
     </details>

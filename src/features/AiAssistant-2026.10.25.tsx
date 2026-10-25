@@ -45,7 +45,9 @@ import {
   type SpectrumEncoding,
   type SpectrumParseOptions,
 } from '../services/f7100-2026.10.25';
-import { requestAssistantAi } from '../services/ai-assistant-client-2026.10.25';
+import { requestAssistantAi, requestAssistantChat } from '../services/ai-assistant-client-2026.10.25';
+import { buildChatContext } from '../domain/assistant-context-2026.10.25';
+import { CHAT_LIMITS, recentChatHistory, validateChatReply, type ChatOperation } from '../../shared/ai-chat-2026.10.25';
 import {
   exportAssistantWorkbook,
   type AssistantAudit,
@@ -64,6 +66,10 @@ interface ChatMessage {
   role: 'assistant' | 'user';
   text: string;
   at: string;
+  source: 'local' | 'model';
+  operation?: ChatOperation | null;
+  applied?: boolean;
+  model?: string;
 }
 interface ParseOptionsState {
   encoding: SpectrumEncoding;
@@ -134,11 +140,12 @@ const timestamp = () =>
     second: '2-digit',
     hour12: false,
   }).format(new Date());
-const chatMessage = (role: ChatMessage['role'], text: string): ChatMessage => ({
+const chatMessage = (role: ChatMessage['role'], text: string, source: ChatMessage['source'] = 'local'): ChatMessage => ({
   id: crypto.randomUUID(),
   role,
   text,
   at: timestamp(),
+  source,
 });
 const formatLabel = (parsed: ParsedSpectrumFile) =>
   parsed.format === 'f7100-emission' ? 'F-7100 单次发射光谱' : '通用文本光谱表';
@@ -302,7 +309,7 @@ function annotateResult(result: AssistantProcessingResult, ai: AiState): Assista
 
 export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }) {
   const { w, update, notify } = useWorkspace();
-  const { credentials } = useAiSession();
+  const { credentials, redactSecrets } = useAiSession();
   const [entries, setEntries] = useState<AssistantEntry[]>([]);
   const [activeId, setActiveId] = useState('');
   const [consent, setConsent] = useState(false);
@@ -310,11 +317,21 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
   const [uploadError, setUploadError] = useState('');
   const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [chatDraft, setChatDraft] = useState('');
+  const [chatDrafts, setChatDrafts] = useState<Record<string, string>>({});
+  const [generalMessages, setGeneralMessages] = useState<ChatMessage[]>([]);
+  const [chatStatus, setChatStatus] = useState<Record<string, { busy: boolean; error: string }>>({});
+  const chatRequests = useRef(new Map<string, AbortController>());
+  const chatLog = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const aiController = useRef<AbortController | null>(null);
   const syncLocks = useRef(new Set<string>());
   const active = entries.find((entry) => entry.id === activeId) ?? entries[0] ?? null;
+  const chatId = active?.id ?? 'general';
+  const chatDraft = chatDrafts[chatId] ?? '';
+  const setChatDraft = (text: string) => setChatDrafts((previous) => ({ ...previous, [chatId]: text }));
+  const messages = active?.messages ?? generalMessages;
+  const chatBusy = chatStatus[chatId]?.busy ?? false;
+  const chatError = chatStatus[chatId]?.error ?? '';
   const blankEntry = active ? selectedBlank(active, entries) : null;
   const draftKey = useMemo(() => {
     if (!active?.parse) return '';
@@ -349,9 +366,15 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
   useEffect(
     () => () => {
       aiController.current?.abort();
+      for (const controller of chatRequests.current.values()) controller.abort();
+      chatRequests.current.clear();
     },
     [],
   );
+
+  useEffect(() => {
+    chatLog.current?.scrollTo({ top: chatLog.current.scrollHeight, behavior: 'smooth' });
+  }, [chatId, messages.length, chatBusy]);
 
   const patchEntry = (
     id: string,
@@ -499,6 +522,10 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
   }
 
   function removeEntry(id: string) {
+    chatRequests.current.get(id)?.abort();
+    chatRequests.current.delete(id);
+    setChatDrafts((previous) => { const next = { ...previous }; delete next[id]; return next; });
+    setChatStatus((previous) => { const next = { ...previous }; delete next[id]; return next; });
     const remaining = entries
       .filter((entry) => entry.id !== id)
       .map((entry) =>
@@ -541,7 +568,7 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
         : null,
       userInstructions: entry.messages
         .filter((message) => message.role === 'user')
-        .map((message) => message.text)
+        .map((message) => redactSecrets(message.text))
         .slice(-50),
       exportedOn: dateStamp(),
     };
@@ -798,10 +825,103 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
     }
   }
 
-  function sendCommand() {
-    const text = chatDraft.trim();
-    if (!text || !active?.parse) return;
+  function updateChatMessages(id: string, change: (messages: ChatMessage[]) => ChatMessage[]) {
+    const bounded = (messages: ChatMessage[]) => change(messages).slice(-100);
+    if (id === 'general') setGeneralMessages(bounded);
+    else patchEntry(id, (entry) => ({ messages: bounded(entry.messages) }));
+  }
+
+  function currentChatContext(entry: AssistantEntry | null, question: string) {
+    if (!entry?.parse) return null;
+    const input = buildInput(entry, entries);
+    if (!input) return null;
+    const revision = assistantProcessingKey(input, entry.parse.rowNumbers);
+    return buildChatContext({ id: entry.id, revision, parse: entry.parse, parameters: entry.parameters,
+      result: entry.result, stale: entry.resultKey !== revision,
+      confirmed: entry.confirmed?.key === revision && entry.resultKey === revision,
+      excitationNm: input.excitationNm, solvent: entry.solvent, hasBlank: !!input.blank, subtractBlank: entry.subtractBlank,
+      blankSameConditions: entry.blankSameConditions }, question);
+  }
+
+  function cancelChat(id = chatId) {
+    chatRequests.current.get(id)?.abort();
+    chatRequests.current.delete(id);
+    setChatStatus((previous) => ({ ...previous, [id]: { busy: false, error: '请求已取消，可重新生成回复。' } }));
+  }
+
+  function clearChat() {
+    chatRequests.current.get(chatId)?.abort();
+    chatRequests.current.delete(chatId);
+    updateChatMessages(chatId, () => []);
     setChatDraft('');
+    setChatStatus((previous) => ({ ...previous, [chatId]: { busy: false, error: '' } }));
+  }
+
+  async function sendChat(regenerate = false) {
+    const id = chatId;
+    if (chatRequests.current.has(id)) return;
+    const error = (text: string) => setChatStatus((previous) => ({ ...previous, [id]: { busy: false, error: text } }));
+    if (!credentials.apiKey.trim()) { error('请先在 AI 设置中填写个人 API Key'); return; }
+    if (!consent) { error('请先在 AI 设置中同意数据发送与计费说明'); return; }
+    const lastUser = messages.map((m) => m.role === 'user' && m.source === 'model').lastIndexOf(true);
+    const text = redactSecrets((regenerate ? messages[lastUser]?.text ?? '' : chatDraft).trim());
+    if (!text) return;
+    if (text.length > CHAT_LIMITS.question) { error(`问题最多 ${CHAT_LIMITS.question} 字符`); return; }
+    const previous = regenerate ? messages.slice(0, lastUser) : messages;
+    const history = recentChatHistory(previous.filter((m) => m.source === 'model')
+      .map((m) => ({ role: m.role, content: redactSecrets(m.text) })));
+    let context;
+    try {
+      context = currentChatContext(active, [...history.filter((m) => m.role === 'user').slice(-3).map((m) => m.content), text].join('\n'));
+    } catch (e) { error(`光谱上下文无效：${(e as Error).message}`); return; }
+    const controller = new AbortController();
+    chatRequests.current.set(id, controller);
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 60000);
+    const user = regenerate ? messages[lastUser] : chatMessage('user', text, 'model');
+    updateChatMessages(id, (current) => regenerate ? [...previous, user] : [...current, user]);
+    if (!regenerate) setChatDraft('');
+    setChatStatus((previous) => ({ ...previous, [id]: { busy: true, error: '' } }));
+    try {
+      const response = await requestAssistantChat(credentials, { question: text, history, context }, controller.signal);
+      // Deleted/cleared/cancelled conversations cannot be revived by late responses.
+      if (chatRequests.current.get(id) !== controller || controller.signal.aborted) return;
+      const reply: ChatMessage = { ...chatMessage('assistant', redactSecrets(response.reply), 'model'),
+        operation: response.operation, model: credentials.model };
+      updateChatMessages(id, (current) => [...current, reply]);
+    } catch (e) {
+      if (chatRequests.current.get(id) === controller)
+        error(controller.signal.aborted ? timedOut ? 'AI 请求超时，请重新生成回复。' : '请求已取消，可重新生成回复。'
+          : redactSecrets((e as Error).message));
+    } finally {
+      clearTimeout(timer);
+      if (chatRequests.current.get(id) === controller) {
+        chatRequests.current.delete(id);
+        setChatStatus((previous) => ({ ...previous, [id]: { busy: false, error: previous[id]?.error ?? '' } }));
+      }
+    }
+  }
+
+  function applyChatOperation(message: ChatMessage) {
+    if (!active?.parse || !message.operation || message.applied) return;
+    try {
+      const context = currentChatContext(active, '');
+      const operation = validateChatReply({ reply: message.text, operation: message.operation }, context).operation!;
+      const parameters = { ...active.parameters, ...operation.parameters };
+      const updated = { ...active, parameters, confirmed: null };
+      const computed = computeEntry(updated, entries.map((e) => e.id === active.id ? updated : e));
+      if (!computed.result || computed.processError) throw new Error(computed.processError || '未生成有效预览');
+      patchEntry(active.id, (entry) => ({ parameters, ...computed, ai: null, confirmed: null, actionError: '',
+        messages: [...entry.messages.map((m) => m.id === message.id ? { ...m, applied: true } : m),
+          chatMessage('assistant', `已由本地算法生成新预览：${describeAssistantResult(computed.result!)} 请核对图表和处理记录，再点击“确认处理结果”。`)].slice(-100) }));
+    } catch (e) {
+      setChatStatus((previous) => ({ ...previous, [chatId]: { busy: false,
+        error: `建议未应用：${(e as Error).message}。文件或参数变化后请重新提问。` } }));
+    }
+  }
+
+  function runLocalCommand(text: string) {
+    if (!text || !active?.parse) return;
     const command = interpretAssistantCommand(text, {
       parameters: active.parameters,
       result: active.result,
@@ -902,6 +1022,78 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
     : active?.sync
       ? '同步到新 Sheet（新版本）'
       : '同步到 Sheet';
+
+  const chatPanel = (
+    <section className="assistant-card assistant-chat-card" aria-label="AI 分析对话">
+      <div className="assistant-section-head">
+        <div>
+          <h3><Bot size={17} /> AI 分析对话</h3>
+          <p>{active ? `关联文件：${active.file.name}` : '通用问答 · 上传文件后可结合真实光谱连续分析'}</p>
+        </div>
+        <button className="small-button" onClick={clearChat} disabled={!messages.length && !chatBusy}>清除当前对话</button>
+      </div>
+      <div ref={chatLog} className="assistant-messages" role="log" aria-live="polite" aria-busy={chatBusy}>
+        {!messages.length && <p className="assistant-note">输入问题开始多轮对话。历史仅随当前页面会话保留，最多显示最近 100 条；每次发送最近 20 条以内的有界上下文。</p>}
+        {messages.slice(-100).map((message) => (
+          <article key={message.id} className={`assistant-message ${message.role}`}>
+            <div className="assistant-message-head">
+              <strong>{message.role === 'user' ? '你' : message.source === 'model' ? `AI · ${message.model}` : '本地处理记录'}</strong>
+              <small>{message.at}</small>
+            </div>
+            <p>{message.text}</p>
+            {message.operation && <div className="assistant-operation">
+              <strong>待应用参数建议</strong>
+              <pre>{JSON.stringify(message.operation.parameters, null, 2)}</pre>
+              <p>应用后仅生成处理预览，请检查图表并确认结果后再导出或同步。</p>
+              <button className="small-button" disabled={message.applied || message.operation.revision !== draftKey}
+                onClick={() => applyChatOperation(message)}>
+                {message.applied ? '已生成预览' : message.operation.revision !== draftKey ? '参数已变化，请重新提问' : '应用建议并生成预览'}
+              </button>
+            </div>}
+          </article>
+        ))}
+        {chatBusy && <p className="assistant-chat-loading" role="status"><Loader2 className="spin" size={16} /> 模型正在回答…</p>}
+      </div>
+      {active?.parse && <div className="assistant-quick-commands" aria-label="本地快捷操作">
+        <span className="assistant-note">本地快捷操作：</span>
+        {['处理异常尖峰', '只标记不修改', '不要修改主峰附近', '重新分析 450–550 nm', '屏蔽散射', '显示处理前后的光谱'].map((command) => (
+          <button key={command} type="button" className="assistant-chip" onClick={() => runLocalCommand(command)}>{command}</button>
+        ))}
+      </div>}
+      <div className="assistant-chat-input">
+        <textarea id="assistant-chat-input" aria-label="向 AI 光谱助手提问" value={chatDraft} rows={3}
+          maxLength={CHAT_LIMITS.question} onChange={(event) => setChatDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault(); void sendChat();
+            }
+          }} placeholder="例如：520 nm 附近的峰是不是杂峰？Shift+Enter 换行" />
+        <button className="primary" disabled={chatBusy || !chatDraft.trim()} onClick={() => void sendChat()} aria-label="发送消息"><Send size={16} /> 发送</button>
+      </div>
+      <div className="assistant-ai-actions">
+        {chatBusy && <button className="small-button" onClick={() => cancelChat()}><X size={14} /> 取消聊天请求</button>}
+        <button className="small-button" disabled={chatBusy || !messages.some((m) => m.role === 'user' && m.source === 'model')}
+          onClick={() => void sendChat(true)}><RefreshCw size={14} /> 重新生成回复</button>
+        <span className="assistant-note">Enter 发送 · Shift+Enter 换行 · 使用所选模型，可能计费</span>
+      </div>
+      {chatError && <ErrorNote>{chatError}</ErrorNote>}
+      <p className="assistant-note">原始测量值独立保留；AI 参数建议需生成预览并人工确认。大文件发送摘要与最多 384 个真实测量点；提问涉及的波长区间会优先取点，局部也可能抽样。</p>
+      {active?.parse && <div className="assistant-ai-actions">
+        <button className="small-button" disabled={active.aiBusy || !result || !consent || !credentials.apiKey}
+          onClick={() => void analyzeWithAi()}>
+          {active.aiBusy ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />} AI 辅助分类（可能计费）
+        </button>
+        {active.aiBusy && <button className="small-button" onClick={() => aiController.current?.abort()}><X size={14} /> 取消 AI 请求</button>}
+      </div>}
+      {!consent && <p className="assistant-note">请在 AI 设置中同意数据发送与计费说明。</p>}
+      {consent && !credentials.apiKey && <p className="assistant-note">请在 AI 设置中填写个人 API Key。</p>}
+      {active?.aiError && <ErrorNote>{active.aiError}</ErrorNote>}
+      {active?.ai && !stale && <div className="assistant-ai-report">
+        <strong>AI 分类说明 · {active.ai.model}</strong><p>{active.ai.summary}</p>
+        {!!active.ai.recommendations.length && <p>建议：{active.ai.recommendations.join('；')}</p>}
+      </div>}
+    </section>
+  );
 
   return (
     <section className="assistant-page" aria-label="AI 光谱助手">
@@ -1288,95 +1480,7 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
                   />
                 </section>
 
-                <section className="assistant-card assistant-chat-card" aria-label="AI 分析对话">
-                  <div className="assistant-section-head">
-                    <div>
-                      <h3><Bot size={17} /> AI 分析对话</h3>
-                      <p>AI 解释异常、辅助分类；所有数值修改由本地确定性算法执行，AI 不会直接改谱。</p>
-                    </div>
-                  </div>
-                  <div className="assistant-messages" role="log" aria-live="polite">
-                    {active.messages.map((message) => (
-                      <article key={message.id} className={`assistant-message ${message.role}`}>
-                        <div className="assistant-message-head">
-                          <strong>{message.role === 'assistant' ? 'AI 光谱助手' : '你'}</strong>
-                          <small>{message.at}</small>
-                        </div>
-                        <p>{message.text}</p>
-                      </article>
-                    ))}
-                  </div>
-                  <div className="assistant-quick-commands">
-                    {['处理异常尖峰', '只标记不修改', '不要修改主峰附近', '重新分析 450–550 nm', '屏蔽散射', '显示处理前后的光谱'].map(
-                      (command) => (
-                        <button
-                          key={command}
-                          type="button"
-                          className="assistant-chip"
-                          onClick={() => {
-                            setChatDraft(command);
-                            queueMicrotask(() => document.getElementById('assistant-chat-input')?.focus());
-                          }}
-                        >
-                          {command}
-                        </button>
-                      ),
-                    )}
-                  </div>
-                  <div className="assistant-chat-input">
-                    <input
-                      id="assistant-chat-input"
-                      aria-label="向 AI 光谱助手提问"
-                      value={chatDraft}
-                      onChange={(event) => setChatDraft(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' && !event.shiftKey) {
-                          event.preventDefault();
-                          sendCommand();
-                        }
-                      }}
-                      placeholder="例如：帮我处理异常尖峰，不要修改主峰附近"
-                    />
-                    <button className="primary" onClick={sendCommand} aria-label="发送指令">
-                      <Send size={16} /> 发送
-                    </button>
-                  </div>
-                  <div className="assistant-ai-actions">
-                    <button
-                      className="small-button"
-                      disabled={
-                        active.aiBusy ||
-                        !result ||
-                        !consent ||
-                        !credentials.apiKey ||
-                        !active.parse
-                      }
-                      onClick={() => void analyzeWithAi()}
-                    >
-                      {active.aiBusy ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
-                      AI 辅助分类（可能计费）
-                    </button>
-                    {active.aiBusy && (
-                      <button className="small-button" onClick={() => aiController.current?.abort()}>
-                        <X size={14} /> 取消 AI 请求
-                      </button>
-                    )}
-                    {!consent && <span className="assistant-note">需在 AI 设置中同意数据发送说明。</span>}
-                    {consent && !credentials.apiKey && (
-                      <span className="assistant-note">需在 AI 设置中填写个人 API Key；不使用 AI 也可完成全部数值处理。</span>
-                    )}
-                  </div>
-                  {active.aiError && <ErrorNote>{active.aiError}</ErrorNote>}
-                  {active.ai && !stale && (
-                    <div className="assistant-ai-report">
-                      <strong>AI 分类说明 · {active.ai.model}</strong>
-                      <p>{active.ai.summary}</p>
-                      {active.ai.recommendations.length > 0 && (
-                        <p>建议：{active.ai.recommendations.join('；')}</p>
-                      )}
-                    </div>
-                  )}
-                </section>
+                {chatPanel}
               </div>
 
               <section className="assistant-card" aria-label="异常检测与处理参数">
@@ -1645,6 +1749,11 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
           )}
         </>
       )}
+
+      {!active?.parse && <>
+        {!active && <AssistantAiSettings consent={consent} onConsentChange={setConsent} />}
+        {chatPanel}
+      </>}
 
       {!entries.length && (
         <div className="assistant-empty">

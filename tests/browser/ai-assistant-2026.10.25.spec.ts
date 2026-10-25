@@ -3,7 +3,7 @@ import { readFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import * as XLSX from 'xlsx';
 
-const SHOT_DIR = path.resolve('验证截图-AI光谱助手-2026.10.25');
+const SHOT_DIR = path.resolve('test-results/AI光谱助手-2026.10.25');
 mkdirSync(SHOT_DIR, { recursive: true });
 const shot = (name: string) => path.join(SHOT_DIR, `${name}-2026.10.25.png`);
 
@@ -82,8 +82,7 @@ test('F-7100 上传、对话、AI 分类、确认、Excel 与 Sheet 同步', asy
   await expect(region.getByTestId('assistant-chart')).toContainText('原始测量值');
 
   // Natural-language command becomes a concrete parameter and a new result.
-  await region.getByLabel('向 AI 光谱助手提问').fill('重新分析 450–550 nm');
-  await region.getByLabel('向 AI 光谱助手提问').press('Enter');
+  await region.getByRole('button', { name: '重新分析 450–550 nm', exact: true }).click();
   await expect(log).toContainText('重分析区间 450–550 nm');
   await expect(log).toContainText('当前结果');
 
@@ -159,8 +158,7 @@ test('F-7100 上传、对话、AI 分类、确认、Excel 与 Sheet 同步', asy
 test('切换模块后保留已上传文件、对话和未确认结果', async ({ page }) => {
   const region = await upload(page);
   const log = region.getByRole('log');
-  await region.getByLabel('向 AI 光谱助手提问').fill('只标记不修改');
-  await region.getByLabel('向 AI 光谱助手提问').press('Enter');
+  await region.getByRole('button', { name: '只标记不修改', exact: true }).click();
   await expect(log).toContainText('关闭局部修复');
 
   await page.getByRole('link', { name: '对象筛选', exact: true }).click();
