@@ -45,6 +45,7 @@ export function buildChatContext(input: {
     parameters: input.parameters,
     preview: {
       state: !result ? 'missing' : input.stale ? 'stale' : input.confirmed ? 'confirmed' : 'unconfirmed',
+      processingRange: result?.scanRange ?? null,
       algorithm: result?.algorithmVersion ?? '', parameters: result?.parameters ?? input.parameters,
       mainPeak: result?.mainPeak ? { x: result.mainPeak.originalX, y: result.mainPeak.originalY } : null,
       protectedRanges: result?.protectedRanges ?? [], anomalyCount: result?.anomalies.length ?? 0,
@@ -54,7 +55,7 @@ export function buildChatContext(input: {
       blank: { selected: input.hasBlank, subtract: input.subtractBlank, sameConditions: input.blankSameConditions, applied: !!result?.blank?.used },
     },
     data: { coverage: indices.size === points.length ? 'full' : 'sampled',
-      selection: '本地全谱计算指标；原始测量点按全谱均匀抽取，并优先包含最大值、主峰、前12个异常及提问波长附近。局部区间也可能抽样；未提供的点未供模型逐点检查。',
+      selection: `${result?.scanRange ? '本地仅在所选扫描范围内计算处理指标；以下点来自完整原始光谱，范围外不参与处理。' : '本地全谱计算指标；'}原始测量点按全谱均匀抽取，并优先包含最大值、主峰、前12个异常及提问波长附近。局部区间也可能抽样；未提供的点未供模型逐点检查。`,
       localRanges, points: [...indices].sort((a, b) => a - b).map((index) => ({ index, ...points[index] })) },
   };
   return validateChatContext(context);

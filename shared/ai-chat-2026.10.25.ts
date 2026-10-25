@@ -14,6 +14,7 @@ export interface ChatContext {
   parameters: AssistantParameters;
   preview: {
     state: 'missing' | 'stale' | 'unconfirmed' | 'confirmed';
+    processingRange?: WaveRange | null;
     algorithm: string;
     parameters: AssistantParameters;
     mainPeak: { x: number; y: number } | null;
@@ -46,6 +47,7 @@ export type BatchEdit =
 export interface BatchFileContext {
   id: string; name: string; version: string; scanRange: WaveRange; pointCount: number;
   state?: 'stale' | 'preview' | 'confirmed';
+  processingRange?: WaveRange | null;
   summary: { remaining: number; masked: number; deleted: number; maximum: { x: number; y: number }; processedMaximum?: { x: number; y: number } | null };
 }
 export interface BatchEditOperation {
@@ -85,7 +87,7 @@ export function validateBatchOperation(value: unknown): BatchEditOperation {
 
 function validateBatchFiles(value: unknown): BatchFileContext[] {
   const files = list(value, 20, v => {
-    const f = object(v); keys(f, ['id', 'name', 'version', 'scanRange', 'pointCount', 'summary', 'state']);
+    const f = object(v); keys(f, ['id', 'name', 'version', 'scanRange', 'pointCount', 'summary', 'state', 'processingRange']);
     const bounds = waveRange(f.scanRange), count = num(f.pointCount, '点数', 2, 10000000, true);
     const s = object(f.summary); keys(s, ['remaining', 'masked', 'deleted', 'maximum', 'processedMaximum']);
     const m = object(s.maximum); keys(m, ['x', 'y']);
@@ -97,7 +99,8 @@ function validateBatchFiles(value: unknown): BatchFileContext[] {
       const p = object(s.processedMaximum); keys(p, ['x', 'y']);
       processedMaximum = { x: num(p.x, '处理后最大值波长', bounds.fromNm, bounds.toNm), y: num(p.y, '处理后最大强度', -1e100, 1e100) };
     }
-    return { ...(f.state === undefined ? {} : { state: choice(f.state, ['stale', 'preview', 'confirmed']) }),
+    return { ...(f.processingRange === undefined ? {} : { processingRange: f.processingRange === null ? null : range(f.processingRange, bounds) }),
+      ...(f.state === undefined ? {} : { state: choice(f.state, ['stale', 'preview', 'confirmed']) }),
       id: textValue(f.id, 120, '文件 ID'), name: textValue(f.name, 260, '文件名'),
       version: textValue(f.version, 120, '文件版本'), scanRange: bounds, pointCount: count,
       summary: { ...(processedMaximum === undefined ? {} : { processedMaximum }), remaining, deleted, masked: num(s.masked, '屏蔽点数', 0, remaining, true),
@@ -174,7 +177,7 @@ export function validateChatContext(value: unknown): ChatContext {
   const f = object(c.file), p = object(c.preview), d = object(c.data);
   keys(f, ['name', 'format', 'pointCount', 'excitationNm', 'solvent', 'scanRange', 'rawMaximum']);
   keys(p, ['state', 'algorithm', 'parameters', 'mainPeak', 'protectedRanges', 'anomalyCount', 'anomalies',
-    'scattering', 'repaired', 'masked', 'unresolved', 'blank']);
+    'scattering', 'repaired', 'masked', 'unresolved', 'blank', 'processingRange']);
   keys(d, ['coverage', 'selection', 'localRanges', 'points']);
   const bounds = waveRange(f.scanRange), count = num(f.pointCount, '点数', 2, 10000000, true);
   const point = (v: unknown) => {
@@ -209,6 +212,7 @@ export function validateChatContext(value: unknown): ChatContext {
     parameters: validateChatParameters(c.parameters, bounds) as AssistantParameters,
     preview: {
       state: choice(p.state, ['missing', 'stale', 'unconfirmed', 'confirmed']),
+      ...(p.processingRange === undefined ? {} : { processingRange: p.processingRange === null ? null : range(p.processingRange, bounds) }),
       algorithm: textValue(p.algorithm, 100, '算法', true),
       parameters: validateChatParameters(p.parameters, bounds) as AssistantParameters,
       mainPeak: p.mainPeak === null ? null : point(p.mainPeak),
@@ -254,7 +258,8 @@ export function validateChatReply(value: unknown, context: ChatContext | null): 
     for (const f of files) for (const e of operation.edits) {
       const from = e.type === 'set-point' ? e.wavelengthNm : e.fromNm;
       const to = e.type === 'set-point' ? e.wavelengthNm : e.toNm;
-      if (from < f.scanRange.fromNm || to > f.scanRange.toNm) throw new Error(`${f.name}：区间超出测量范围`);
+      const permitted = f.processingRange ?? f.scanRange;
+      if (from < permitted.fromNm || to > permitted.toNm) throw new Error(`${f.name}：区间超出测量范围`);
     }
     return { reply, operation };
   }

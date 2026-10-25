@@ -94,6 +94,11 @@ export function assistantAnomalyRows(result: AssistantProcessingResult) {
       });
     });
   }
+  for (const p of result.points.filter(p => p.rangeExcluded)) rows.push({
+    记录号: `R${p.index + 1}`, 异常类型: '扫描范围筛选', 处理状态: '范围外，仅保留原始值',
+    波长_nm: p.x, 原始值: p.original, 修复值: '', 源文件行号: p.rowNumber,
+    编辑前: p.original, 编辑后: '', 删除前: false, 删除后: true, 方法: p.method, 理由: p.reason,
+  });
   for (const a of result.editAudit ?? []) rows.push({
     记录号: a.batchId, 异常类型: '人工编辑', 处理状态: a.action, 波长_nm: a.wavelengthNm,
     原始值: a.original, 修复值: a.afterDeleted ? '' : a.after ?? '', 方法: a.edit.type, 理由: a.reason,
@@ -124,6 +129,8 @@ export function assistantReportRows(input: AssistantExportInput) {
   push('激发波长_nm', audit.excitationNm ?? parsed.metadata.excitationNm ?? '未识别');
   push('溶剂或基质', audit.solvent || '未填写');
   push('发射扫描范围_nm', `${parsed.points[0].x}–${parsed.points.at(-1)!.x}`);
+  push('处理扫描范围_nm', result.scanRange ? `${result.scanRange.fromNm}–${result.scanRange.toNm}（闭区间）` : '完整测量范围');
+  push('扫描范围外保留的原始点数', result.points.filter(p => p.rangeExcluded).length);
   push('数据点数量', parsed.points.length);
   push('人工编辑计划及撤销记录', JSON.stringify(result.editPlans ?? []));
   push('源文件总行数', parsed.totalLines);
@@ -327,7 +334,7 @@ export async function buildAssistantBatchWorkbook(inputs: AssistantBatchExportIn
     add(input.parsed.fileName, tagged(input, input.result.points.map(p => ({
       来源文件: input.parsed.fileName, 源文件行号: p.rowNumber, 波长_nm: p.x, 原始强度: p.original,
       原始文本行: p.rowNumber === null ? '' : lines[p.rowNumber - 1] ?? '',
-      处理后强度: p.deleted ? '' : p.processed ?? '', 行状态: p.deleted ? '已删除' : p.processed === null ? '已屏蔽' : '保留',
+      处理后强度: p.deleted ? '' : p.processed ?? '', 行状态: p.rangeExcluded ? '扫描范围外' : p.deleted ? '已删除' : p.processed === null ? '已屏蔽' : '保留',
       空白强度_插值: p.blank ?? '', 空白扣除后强度: p.corrected, 方法: p.method, 理由: p.reason,
     }))), ['文件ID', '来源文件', '波长_nm', '原始强度', '处理后强度']);
   }

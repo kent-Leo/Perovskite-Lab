@@ -36,6 +36,7 @@ import {
   type AssistantProcessingResult,
   type AssistantSensitivity,
 } from '../domain/assistant-processing-2026.10.25';
+import { resolveAssistantScanRange, type ScanRangeDraft } from '../domain/assistant-scan-range-2026.10.26';
 import { interpretAssistantCommand } from '../domain/assistant-command-2026.10.25';
 import {
   delimiterLabel,
@@ -100,6 +101,7 @@ interface AiState {
   recommendations: string[];
 }
 interface AssistantEntry {
+  scanRangeDraft: ScanRangeDraft | null;
   epoch: number;
   manualRevision: { base: string; version: string } | null;
   id: string;
@@ -193,6 +195,7 @@ function buildInput(entry: AssistantEntry, entries: AssistantEntry[]): Assistant
   const blank = selectedBlank(entry, entries);
   return {
     points: entry.parse.points,
+    scanRange: resolveAssistantScanRange(entry.parse.points, entry.scanRangeDraft),
     rowNumbers: entry.parse.rowNumbers,
     excitationNm: excitation,
     solvent: entry.solvent,
@@ -262,7 +265,7 @@ async function createEntry(file: File): Promise<AssistantEntry> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   const base: AssistantEntry = {
     id: crypto.randomUUID(),
-    epoch: 0, manualRevision: null,
+    epoch: 0, manualRevision: null, scanRangeDraft: null,
     file,
     bytes,
     parse: null,
@@ -387,6 +390,14 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
       return '';
     }
   }, [active, entries]);
+  let scanRangeError = '';
+  let scanRangeCount = active?.parse?.points.length ?? 0;
+  if (active?.parse) {
+    try {
+      const range = resolveAssistantScanRange(active.parse.points, active.scanRangeDraft);
+      if (range) scanRangeCount = active.parse.points.filter(p => p.x >= range.fromNm && p.x <= range.toNm).length;
+    } catch (e) { scanRangeError = (e as Error).message; }
+  }
   const stale = !!active?.result && active.resultKey !== draftKey;
   const confirmed =
     active?.confirmed &&
@@ -430,7 +441,7 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
         entry.id === id
           ? (() => {
               const change = typeof patch === 'function' ? patch(entry) : patch;
-              const dirty = ['parameters', 'excitation', 'solvent', 'blankId', 'subtractBlank', 'blankSameConditions'].some(k => k in change);
+              const dirty = ['parameters', 'excitation', 'solvent', 'blankId', 'subtractBlank', 'blankSameConditions', 'scanRangeDraft'].some(k => k in change);
               return { ...entry, ...change, ...(dirty && !('resultKey' in change) ? { epoch: entry.epoch + 1, confirmed: null } : {}) };
             })()
           : entry,
@@ -899,7 +910,7 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
       const maximum = points.reduce((a, b) => a.y > b.y ? a : b);
       const live = doc.result.points.filter(p => !p.deleted && p.processed !== null);
       const peak = live.reduce<(typeof live)[number] | null>((a, b) => !a || b.processed! > a.processed! ? b : a, null);
-      return { id: e.id, name: e.file.name, version: doc.version,
+      return { id: e.id, name: e.file.name, version: doc.version, processingRange: doc.result.scanRange ?? null,
         state: e.resultKey !== doc.version ? 'stale' as const : e.confirmed?.key === doc.version ? 'confirmed' as const : 'preview' as const,
         scanRange: { fromNm: points[0].x, toNm: points.at(-1)!.x }, pointCount: points.length,
         summary: { remaining: doc.result.points.filter(p => !p.deleted).length,
@@ -1412,7 +1423,7 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
                 <div className="assistant-metrics">
                   <Metric label="激发波长" value={active.parse.metadata.excitationNm?.toString() ?? '—'} unit="nm" />
                   <Metric
-                    label="扫描范围"
+                    label="实际测量范围"
                     value={`${fmt(active.parse.points[0].x, 5)}–${fmt(active.parse.points.at(-1)!.x, 5)}`}
                     unit="nm"
                   />
@@ -1421,6 +1432,35 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
                   <Metric label="测量日期" value={active.parse.metadata.measuredOn || '—'} unit="" />
                   <Metric label="跳过行" value={active.parse.skippedRows.toString()} unit="行" />
                 </div>
+                <section className="assistant-scan-range" aria-label="扫描范围设置">
+                  <strong>扫描范围 / nm（可修改）</strong>
+                  <p className="assistant-note">仅处理并导出所选闭区间内的数据，包含两个端点；原始数据完整保留。每个文件独立设置。</p>
+                  <div className="assistant-form-grid">
+                    <Field label="扫描范围起点 / nm">
+                      <input type="number" step="any" aria-invalid={!!scanRangeError}
+                        min={active.parse.points[0].x} max={active.parse.points.at(-1)!.x}
+                        value={active.scanRangeDraft?.from ?? String(active.parse.points[0].x)}
+                        onChange={event => patchEntry(active.id, { scanRangeDraft: { from: event.target.value,
+                          to: active.scanRangeDraft?.to ?? String(active.parse!.points.at(-1)!.x) } })} />
+                    </Field>
+                    <Field label="扫描范围终点 / nm">
+                      <input type="number" step="any" aria-invalid={!!scanRangeError}
+                        min={active.parse.points[0].x} max={active.parse.points.at(-1)!.x}
+                        value={active.scanRangeDraft?.to ?? String(active.parse.points.at(-1)!.x)}
+                        onChange={event => patchEntry(active.id, { scanRangeDraft: { from: active.scanRangeDraft?.from ?? String(active.parse!.points[0].x),
+                          to: event.target.value } })} />
+                    </Field>
+                  </div>
+                  {scanRangeError ? <ErrorNote>{scanRangeError}</ErrorNote> :
+                    <p className="assistant-note">所选范围包含 {scanRangeCount} 个实际测量点，范围外 {active.parse.points.length - scanRangeCount} 点仅保留在原始数据中。</p>}
+                  <div className="assistant-ai-actions">
+                    <button className="small-button" disabled={!active.scanRangeDraft}
+                      onClick={() => patchEntry(active.id, { scanRangeDraft: null })}>恢复完整范围</button>
+                    <button className="small-button" disabled={!!scanRangeError || !stale}
+                      onClick={() => recompute(active.id)}>按扫描范围生成预览</button>
+                    {stale && <span className="assistant-note">设置已变化，请重新生成预览并确认结果。</span>}
+                  </div>
+                </section>
                 <dl className="assistant-metadata">
                   <div><dt>样品</dt><dd>{active.parse.metadata.sample || '—'}</dd></div>
                   <div><dt>仪器</dt><dd>{active.parse.metadata.instrument || '—'}</dd></div>

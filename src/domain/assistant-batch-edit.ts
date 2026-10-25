@@ -61,7 +61,7 @@ export function previewBatchEdit(documents: BatchDocument[], value: unknown,
       if (!permissions.includes(edit.type)) throw new Error('未授权的编辑操作');
       const from = edit.type === 'set-point' ? edit.wavelengthNm : edit.fromNm;
       const to = edit.type === 'set-point' ? edit.wavelengthNm : edit.toNm;
-      if (from < lower || to > upper) throw new Error(`${doc.name}：编辑范围超出实际测量范围`);
+      if (from < (result.scanRange?.fromNm ?? lower) || to > (result.scanRange?.toNm ?? upper)) throw new Error(`${doc.name}：编辑范围超出实际测量范围`);
       const inRange = result.points.filter(p => !p.deleted && p.x >= from && p.x <= to);
       if (!inRange.length) throw new Error(`${doc.name}：指定范围或波长没有可用测量点`);
       if (edit.type === 'set-point' && inRange.length !== 1) throw new Error(`${doc.name}：指定波长不唯一`);
