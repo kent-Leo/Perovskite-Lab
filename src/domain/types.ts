@@ -169,6 +169,8 @@ export const defaultStyle = (kind: 'spectra' | 'screening' | 'calibration'): Cha
 // ---- Workbook model shared by all four table areas (v0.5.5) ----
 export type ImportKind = 'wide' | 'long' | 'objects' | 'calibration';
 export interface SheetMapping {
+  /** AI result sheets use empty intensities for masked or absent measurements. */
+  allowEmptyIntensity?: boolean;
   kind: ImportKind;
   start: number;
   header: boolean;

@@ -139,7 +139,7 @@ test('F-7100 上传、对话、AI 分类、确认、Excel 与 Sheet 同步', asy
   await expect(region.getByText('未确认', { exact: true })).toBeVisible();
   await expect(region.getByRole('button', { name: '导出 Excel', exact: true })).toBeDisabled();
 
-  // The new Sheet is active in the existing spectrum workbench and plots both curves.
+  // The new Sheet is active in the existing spectrum workbench and plots the processed curve.
   await region.getByRole('button', { name: /前往光谱工作台查看/ }).click();
   await expect(page.getByRole('heading', { name: '光谱工作台', exact: true })).toBeVisible();
   await expect(
@@ -148,7 +148,7 @@ test('F-7100 上传、对话、AI 分类、确认、Excel 与 Sheet 同步', asy
       exact: true,
     }),
   ).toBeVisible();
-  await expect(page.getByTestId('spectra-chart').locator('polyline')).toHaveCount(2);
+  await expect(page.getByTestId('spectra-chart').locator('polyline')).toHaveCount(1);
   await page.screenshot({ path: shot('同步后的光谱工作台'), fullPage: true, animations: 'disabled' });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,

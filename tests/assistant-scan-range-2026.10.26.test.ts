@@ -63,8 +63,8 @@ describe('可修改扫描范围', () => {
     expect(raw).toHaveLength(101); expect(processed).toHaveLength(61);
     expect(processed[0]).toMatchObject({波长_nm:480,源文件行号:32});
     const sheet = buildAssistantSheetBundle({...exported,unit:'µM'});
-    expect(sheet.payload.grid.slice(1).map(r=>[r[0],r[2]])).toEqual(processed.map(r=>[String(r.波长_nm),String(r.处理后强度)]));
-    expect(sheet.payload.rawSpectra![0].points).toHaveLength(101);
+    expect(sheet.payload.grid.slice(1).map(r=>[r[0],r[1]])).toEqual(processed.map(r=>[String(r.波长_nm),String(r.处理后强度)]));
+    expect(sheet.payload.rawSpectra![0].points).toHaveLength(61);
     expect(JSON.stringify(XLSX.utils.sheet_to_json(wb.Sheets['AI分析报告']))).toContain('480–540');
   });
   it('replays manual edits in the selected range and rejects operations outside it', () => {

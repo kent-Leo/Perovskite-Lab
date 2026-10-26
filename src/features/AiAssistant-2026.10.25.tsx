@@ -87,6 +87,7 @@ interface ConfirmedSnapshot {
   at: string;
 }
 interface SyncRecord {
+  shared?: boolean;
   key: string;
   sheetId: string;
   sheetName: string;
@@ -361,6 +362,7 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
 
   const [consent, setConsent] = useState(false);
   const [autoSync, setAutoSync] = useState(true);
+  const [sheetImportMode, setSheetImportMode] = useState<'separate' | 'combined'>('separate');
   const [uploadError, setUploadError] = useState('');
   const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -661,6 +663,7 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
       const outcome = syncAssistantResult(
         w,
         {
+          sourceId: entry.id,
           parsed: entry.parse,
           result: snapshot.result,
           audit: buildAudit(entry, snapshot.result),
@@ -670,12 +673,14 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
         {
           mode: effectiveMode,
           targetSheetId: entry.sync?.sheetId,
+          preserveOtherSeries: entry.sync?.shared,
           sheetName,
         },
       );
       update(outcome.patch);
       patchEntry(entry.id, {
         sync: {
+          shared: effectiveMode === 'update' && entry.sync?.shared,
           key: snapshot.key,
           sheetId: outcome.sheetId,
           sheetName: outcome.sheetName,
@@ -687,7 +692,7 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
       addMessage(
         entry.id,
         'assistant',
-        `${outcome.created ? '已创建' : '已更新'} Sheet「${outcome.sheetName}」，原始与处理后数据均已写入，并自动生成光谱曲线。`,
+        `${outcome.created ? '已创建' : '已更新'} Sheet「${outcome.sheetName}」，仅写入处理后数据，按文件名标识光谱曲线。`,
       );
       notify(`已同步到 Sheet「${outcome.sheetName}」`);
       return true;
@@ -1024,29 +1029,48 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
       return docs.length === batchPreview.before.length && batchPreview.before.every(b => docs.some(d => d.id === b.id && d.version === b.version));
     } catch { return false; }
   }
-  // Build every Sheet patch first, then write the workspace once. No partially synced batch.
-  function installBatch(docs: BatchDocument[]) {
+  // Stage all writes before committing so a failed batch leaves the workbook intact.
+  function syncEntriesToSheets(targets: AssistantEntry[], createOnly: boolean) {
     let workspace = w;
-    const installed = new Map<string, AssistantEntry>();
-    for (const doc of docs) {
+    const synced = new Map<string, SyncRecord>();
+    const groups = sheetImportMode === 'combined' && targets.length ? [targets] : targets.map(entry => [entry]);
+    for (const group of groups) {
+      const shared = group.length > 1;
+      const first = group[0];
+      const existingId = first.sync?.sheetId;
+      const canUpdate = !createOnly && existingId && (sheetImportMode === 'combined' || !first.sync?.shared)
+        && group.every(entry => entry.sync?.sheetId === existingId);
+      const outcome = syncAssistantResult(workspace, group.map(entry => ({
+        sourceId: entry.id, parsed: entry.parse!, result: entry.confirmed!.result,
+        audit: buildAudit(entry, entry.confirmed!.result), unit: w.calUnit, fallbackExcitation: w.excitation,
+      })), {
+        mode: canUpdate ? 'update' : 'create', targetSheetId: existingId,
+        preserveOtherSeries: !!canUpdate && group.some(entry => entry.sync?.shared),
+        sheetName: shared ? 'AI处理_合并光谱' : baseAiSheetName(first.file.name, (first.sync?.version ?? 0) + 1),
+      });
+      workspace = { ...workspace, ...outcome.patch };
+      for (const entry of group) synced.set(entry.id, {
+        shared: shared || (!!canUpdate && !!entry.sync?.shared),
+        key: entry.confirmed!.key, sheetId: outcome.sheetId, sheetName: outcome.sheetName,
+        version: (entry.sync?.version ?? 0) + 1, at: timestamp(),
+      });
+    }
+    return { workspace, synced };
+  }
+  function installBatch(docs: BatchDocument[]) {
+    const installed = docs.map(doc => {
       const entry = entries.find(e => e.id === doc.id)!;
-      const next: AssistantEntry = { ...entry, result: doc.result, resultKey: doc.version,
+      return { ...entry, result: doc.result, resultKey: doc.version,
         manualRevision: { base: baseEntryKey(entry, entries), version: doc.version },
         confirmed: { key: doc.version, result: doc.result, at: dateStamp() }, ai: null };
-      if (autoSync || entry.sync) {
-        const outcome = syncAssistantResult(workspace, { parsed: entry.parse!, result: doc.result,
-          audit: buildAudit(entry, doc.result), unit: w.calUnit }, {
-          mode: entry.sync ? 'update' : 'create', targetSheetId: entry.sync?.sheetId,
-          sheetName: entry.sync?.sheetName ?? baseAiSheetName(entry.file.name),
-        });
-        workspace = { ...workspace, ...outcome.patch };
-        next.sync = { key: doc.version, sheetId: outcome.sheetId, sheetName: outcome.sheetName,
-          version: (entry.sync?.version ?? 0) + 1, at: timestamp() };
-      }
-      installed.set(doc.id, next);
-    }
+    });
+    const targets = installed.filter(entry => autoSync || entry.sync);
+    const { workspace, synced } = syncEntriesToSheets(targets, false);
     if (workspace !== w) update(workspace);
-    setEntries(previous => previous.map(e => installed.get(e.id) ?? e));
+    setEntries(previous => previous.map(entry => {
+      const next = installed.find(candidate => candidate.id === entry.id);
+      return next ? { ...next, sync: synced.get(entry.id) ?? next.sync } : entry;
+    }));
   }
   function confirmBatch() {
     if (!batchPreview || !batchConfirmed) return;
@@ -1086,6 +1110,16 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
   const canBatchExport = selectedEntries.length > 0 && selectedEntries.every(e => {
     try { return e.confirmed?.key === entryKey(e, entries) && e.confirmed?.key === e.resultKey; } catch { return false; }
   });
+  function importSelectedSheets() {
+    if (!canBatchExport) return;
+    try {
+      const { workspace, synced } = syncEntriesToSheets(selectedEntries, true);
+      update(workspace);
+      setEntries(previous => previous.map(entry => synced.has(entry.id) ? { ...entry, sync: synced.get(entry.id)! } : entry));
+      setBatchError('');
+      notify(`已将 ${selectedEntries.length} 个文件的处理后数据导入${sheetImportMode === 'combined' ? '同一 Sheet' : '各自的 Sheet'}`);
+    } catch (e) { setBatchError((e as Error).message); }
+  }
   async function exportBatch() {
     if (!canBatchExport || batchExporting) return;
     setBatchExporting(true); setBatchError('');
@@ -1332,6 +1366,19 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
             checked={selectedIds.includes(e.id)} onChange={event => setSelectedIds(ids => event.target.checked ? [...ids, e.id] : ids.filter(id => id !== e.id))} />{e.file.name}</label>)}
         </div>
         <p>已选择 {selectedEntries.length} 个文件。在下方对话中描述批量操作，再点击“应用建议并生成预览”。</p>
+        <div className="assistant-actions" aria-label="多文件导入 Sheet">
+          <label>多文件导入方式{' '}
+            <select aria-label="多文件导入方式" value={sheetImportMode}
+              onChange={event => setSheetImportMode(event.target.value as 'separate' | 'combined')}>
+              <option value="separate">分别导入不同 Sheet</option>
+              <option value="combined">合并导入同一 Sheet</option>
+            </select>
+          </label>
+          <button disabled={!canBatchExport} onClick={importSelectedSheets}>
+            <Layers3 size={16} /> 导入所选文件到 Sheet
+          </button>
+        </div>
+        <p className="assistant-note">所选文件需先确认处理结果。仅导入波长和处理后强度，按文件名区分；合并时按波长对齐，缺失值留空。此选择也用于确认批量编辑后的自动同步。</p>
         {batchPreview && <div className="assistant-operation" aria-label="批量编辑预览">
           <h4>操作预览（尚未提交）</h4>
           {batchPreview.plan.edits.map((edit, i) => <p key={i}>{describeBatchEdit(edit)}</p>)}
@@ -1963,7 +2010,7 @@ export function AiAssistant({ onOpenWorkspace }: { onOpenWorkspace: () => void }
                     checked={autoSync}
                     onChange={(event) => setAutoSync(event.target.checked)}
                   />
-                  确认处理后自动同步到新 Sheet（默认开启；不会覆盖已有 Sheet）
+                  确认处理后自动同步（单文件创建新 Sheet；批量按所选导入方式同步）
                 </label>
                 {!canConfirm && (
                   <p className="assistant-note">

@@ -136,9 +136,9 @@ describe('combined Excel and Sheet parity', () => {
     for (const input of inputs) {
       const sheet = buildAssistantSheetBundle({ ...input, unit: 'µM' });
       const rows = processed.filter(r => r.文件ID === input.id);
-      expect(sheet.payload.grid.slice(1).map(r => [r[0],r[2]])).toEqual(rows.map(r => [String(r.波长_nm),String(r.处理后强度)]));
-      expect(sheet.payload.rawSpectra[0].points).toHaveLength(301);
-      expect(sheet.payload.rawSpectra[1].points).toHaveLength(248);
+      expect(sheet.payload.grid.slice(1).map(r => [r[0],r[1]])).toEqual(rows.map(r => [String(r.波长_nm),String(r.处理后强度)]));
+      expect(sheet.payload.rawSpectra).toHaveLength(1);
+      expect(sheet.payload.rawSpectra[0].points).toHaveLength(248);
       expect(rows.find(r => r.波长_nm===410)!.处理后强度).toBe('');
       expect(rows.find(r => r.波长_nm===420)!.处理后强度).toBe(123);
     }

@@ -1,6 +1,7 @@
 import type { Workspace } from '../state/workspace';
 import {
   createSheetWithPayload,
+  sheetSnapshots,
   switchSheet,
   workbookOf,
   writeSheetPayload,
@@ -10,21 +11,16 @@ import {
   palette,
   uid,
   type ColumnMetadata,
-  type Point,
   type Spectrum,
 } from '../domain/types';
-import {
-  assistantProcessedRows,
-  type AssistantAudit,
-  type AssistantExportInput,
-} from './assistant-export-2026.10.25';
+import type { AssistantAudit } from './assistant-export-2026.10.25';
 import type {
-  AssistantPoint,
   AssistantProcessingResult,
 } from '../domain/assistant-processing-2026.10.25';
 import type { ParsedSpectrumFile } from './f7100-2026.10.25';
 
 export interface AssistantSheetBuildInput {
+  sourceId?: string;
   parsed: ParsedSpectrumFile;
   result: AssistantProcessingResult;
   audit: AssistantAudit;
@@ -35,23 +31,9 @@ export interface AssistantSheetBuildInput {
 export interface AssistantSheetBundle {
   payload: RawSheetPayload & { rawSpectra: Spectrum[] };
   metadata: Record<string, ColumnMetadata>;
-  originalSpectrumId: string;
   processedSpectrumId: string;
   processedPoints: number;
 }
-
-const STATUS_LABEL: Record<AssistantPoint['status'], string> = {
-  normal: '正常',
-  repaired: '已修复',
-  masked: '已屏蔽',
-  unresolved: '仅标记',
-};
-const KIND_LABEL: Record<NonNullable<AssistantPoint['anomalyKind']>, string> = {
-  'positive-spike': '孤立正异常尖峰',
-  'negative-spike': '孤立负异常尖峰',
-  scattering: '疑似散射干扰',
-  unrepairable: '连续异常区间',
-};
 
 export function baseAiSheetName(fileName: string, version = 1) {
   const base = fileName.replace(/\.[^.]+$/, '').trim() || '光谱';
@@ -59,107 +41,81 @@ export function baseAiSheetName(fileName: string, version = 1) {
   return `${base.slice(0, Math.max(1, 40 - suffix.length))}${suffix}`;
 }
 
-function originalSpectrum(points: Point[], name: string, source: string, unit: string): Spectrum {
-  return {
-    id: uid(),
-    name,
-    role: 'target',
-    concentration: '',
-    unit,
-    color: palette[0],
-    visible: true,
-    points,
-    source,
-  };
+interface ProcessedColumn {
+  spectrum: Spectrum;
+  values: Map<number, string>;
+  metadata?: ColumnMetadata;
 }
 
-function processedSpectrum(
-  points: Point[],
-  name: string,
-  source: string,
-  unit: string,
-): Spectrum {
+function assembleSheet(columns: ProcessedColumn[], unit: string, excitation: string): AssistantSheetBundle {
+  const wavelengths = [...new Set(columns.flatMap(column => [...column.values.keys()]))].sort((a, b) => a - b);
+  const names = new Set<string>();
+  const metadata: Record<string, ColumnMetadata> = { 'raw-0': { title: '波长', unit: 'nm' } };
+  const spectra = columns.map((column, index) => {
+    const base = column.spectrum.name;
+    let name = base;
+    for (let suffix = 2; names.has(name); suffix++) name = `${base} (${suffix})`;
+    names.add(name);
+    const color = column.metadata?.color ?? palette[index % palette.length];
+    metadata[`raw-${index + 1}`] = { ...column.metadata, title: name, unit: 'a.u.', color };
+    return { ...column.spectrum, name, color };
+  });
   return {
-    id: uid(),
-    name,
-    role: 'target',
-    concentration: '',
-    unit,
-    color: palette[1],
-    visible: true,
-    points,
-    source,
-  };
-}
-
-/** Converts one confirmed result into a normal editable raw-workbook sheet. */
-export function buildAssistantSheetBundle(input: AssistantSheetBuildInput): AssistantSheetBundle {
-  const { parsed, result, audit, unit } = input;
-  const source = `AI光谱助手 / ${parsed.fileName} / ${audit.exportedOn || '未记录日期'}`;
-  const base = parsed.fileName.replace(/\.[^.]+$/, '');
-  const originalPoints = result.points.map((point) => ({ x: point.x, y: point.original }));
-  const processedPoints = result.points
-    .filter((point) => !point.deleted && point.processed !== null)
-    .map((point) => ({ x: point.x, y: point.processed as number }));
-  const original = originalSpectrum(originalPoints, `${base} · 原始`, source, unit);
-  const processed = processedSpectrum(processedPoints, `${base} · AI处理`, source, unit);
-  const rows = assistantProcessedRows(input).map((row) => [
-    String(row.波长_nm),
-    String(row.原始强度),
-    row.处理后强度 === '' ? '' : String(row.处理后强度),
-    row.异常标记,
-    row.处理方法,
-  ]);
-  const grid = [
-    ['波长 / nm', '原始强度', '处理后强度', '异常标记', '处理方法'],
-    ...rows,
-  ];
-  const payload: AssistantSheetBundle['payload'] = {
-    grid,
-    mapping: {
-      kind: 'wide',
-      start: 1,
-      header: true,
-      x: 0,
-      ys: [1, 2],
-      name: 0,
-      concentration: 0,
-      unit,
+    payload: {
+      grid: [['波长 / nm', ...spectra.map(s => s.name)],
+        ...wavelengths.map(x => [String(x), ...columns.map(column => column.values.get(x) ?? '')])],
+      mapping: { kind: 'wide', allowEmptyIntensity: true, start: 1, header: true, x: 0, ys: spectra.map((_, i) => i + 1), name: 0, concentration: 0, unit },
+      spectra,
+      rawSpectra: spectra.map(s => ({ ...s, points: s.points.map(p => ({ ...p })) })),
+      rawColumnSpectra: Object.fromEntries(spectra.map((s, i) => [`raw-${i + 1}`, s.id])),
+      excitation,
     },
-    spectra: [original, processed],
-    rawSpectra: [
-      { ...original, points: originalPoints },
-      { ...processed, points: processedPoints },
-    ],
-    rawColumnSpectra: {
-      'raw-1': original.id,
-      'raw-2': processed.id,
-    },
-    excitation:
-      input.audit.excitationNm !== null
-        ? String(input.audit.excitationNm)
-        : input.parsed.metadata.excitationNm !== null
-          ? String(input.parsed.metadata.excitationNm)
-          : (input.fallbackExcitation ?? ''),
-  };
-  const metadata: Record<string, ColumnMetadata> = {
-    'raw-0': { title: '波长', unit: 'nm' },
-    'raw-1': { title: '原始强度', unit: 'a.u.', color: original.color },
-    'raw-2': { title: '处理后强度', unit: 'a.u.', color: processed.color },
-    'raw-3': { title: '异常标记', comment: '正常 / 已修复 / 已屏蔽 / 仅标记' },
-    'raw-4': { title: '处理方法', comment: '逐点算法与理由见 Excel 杂峰处理记录' },
-  };
-  return {
-    payload,
     metadata,
-    originalSpectrumId: original.id,
-    processedSpectrumId: processed.id,
-    processedPoints: processedPoints.length,
+    processedSpectrumId: spectra[0].id,
+    processedPoints: spectra.reduce((sum, s) => sum + s.points.length, 0),
   };
+}
+
+/** Only confirmed processed values enter the editable spectrum workbook. */
+export function buildAssistantSheetBundle(input: AssistantSheetBuildInput): AssistantSheetBundle {
+  return buildAssistantSheetsBundle([input]);
+}
+
+export function buildAssistantSheetsBundle(inputs: AssistantSheetBuildInput[]): AssistantSheetBundle {
+  if (!inputs.length) throw new Error('请选择要导入的文件');
+  const columns = inputs.map(({ parsed, result, audit, unit, sourceId }): ProcessedColumn => {
+    const retained = result.points.filter(point => !point.deleted);
+    return {
+      spectrum: {
+        id: sourceId ? `assistant-${sourceId}` : uid(), name: parsed.fileName,
+        role: 'target', concentration: '', unit, color: palette[0], visible: true,
+        source: `AI光谱助手 / ${parsed.fileName} / ${audit.exportedOn || '未记录日期'}`,
+        points: retained.filter(p => p.processed !== null).map(p => ({ x: p.x, y: p.processed! })),
+      },
+      values: new Map(retained.map(p => [p.x, p.processed === null ? '' : String(p.processed)])),
+    };
+  });
+  const excitations = inputs.map(input => String(input.audit.excitationNm ?? input.parsed.metadata.excitationNm ?? input.fallbackExcitation ?? ''));
+  return assembleSheet(columns, inputs[0].unit, new Set(excitations).size === 1 ? excitations[0] : '');
+}
+
+function columnsFromBundle(bundle: { payload: RawSheetPayload; metadata: AssistantSheetBundle['metadata'] }): ProcessedColumn[] {
+  return bundle.payload.mapping.ys.map(index => {
+    const id = bundle.payload.rawColumnSpectra[`raw-${index}`];
+    const spectrum = bundle.payload.spectra.find(s => s.id === id);
+    if (!spectrum) throw new Error('目标 Sheet 的数据列已变化，请创建新 Sheet');
+    return {
+      spectrum,
+      metadata: bundle.metadata[`raw-${index}`],
+      values: new Map(bundle.payload.grid.slice(1).filter(row => row[0]?.trim() && Number.isFinite(Number(row[0])))
+        .map(row => [Number(row[0]), row[index] ?? ''])),
+    };
+  });
 }
 
 export interface SyncAssistantResultOptions {
   mode: 'create' | 'update';
+  preserveOtherSeries?: boolean;
   /** Existing sheet to replace; required for update mode. */
   targetSheetId?: string;
   sheetName: string;
@@ -179,15 +135,30 @@ export interface SyncAssistantResultOutcome {
  */
 export function syncAssistantResult(
   w: Workspace,
-  input: AssistantSheetBuildInput,
+  input: AssistantSheetBuildInput | AssistantSheetBuildInput[],
   options: SyncAssistantResultOptions,
 ): SyncAssistantResultOutcome {
-  const bundle = buildAssistantSheetBundle(input);
+  let bundle = buildAssistantSheetsBundle(Array.isArray(input) ? input : [input]);
   if (options.mode === 'update') {
     if (!options.targetSheetId) throw new Error('请选择要更新的 Sheet');
     const wb = workbookOf(w, 'raw');
     const tab = wb.tabs.find((entry) => entry.id === options.targetSheetId);
     if (!tab) throw new Error('目标 Sheet 已不存在，请重新创建');
+    if (options.preserveOtherSeries) {
+      const existing = sheetSnapshots(w, 'raw').find(snapshot => snapshot.tab.id === tab.id)!.payload as RawSheetPayload;
+      const incoming = columnsFromBundle(bundle);
+      const previous = columnsFromBundle({ payload: existing, metadata: w.sheetMetadata?.[tab.id] ?? {} });
+      const replacements = new Map(incoming.map(column => [column.spectrum.id, column]));
+      const previousIds = new Set(previous.map(column => column.spectrum.id));
+      const columns = previous.map(column => {
+        const replacement = replacements.get(column.spectrum.id);
+        return replacement ? { ...replacement, metadata: column.metadata,
+          spectrum: { ...replacement.spectrum, name: column.spectrum.name } } : column;
+      })
+        .concat(incoming.filter(column => !previousIds.has(column.spectrum.id)));
+      bundle = assembleSheet(columns, bundle.payload.mapping.unit,
+        existing.excitation === bundle.payload.excitation ? existing.excitation ?? '' : '');
+    }
     const written = writeSheetPayload(w, 'raw', tab.id, bundle.payload);
     const switched = switchSheet({ ...w, ...written }, 'raw', tab.id);
     return {

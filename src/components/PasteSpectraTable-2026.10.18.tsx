@@ -301,7 +301,7 @@ export function PasteSpectraTable() {
           className="small-button"
           disabled={!rows.length}
           onClick={() => {
-            updateMapping(suggestPasteMapping(grid, w.calUnit));
+            updateMapping({ ...suggestPasteMapping(grid, w.calUnit), allowEmptyIntensity: mapping.allowEmptyIntensity });
             setError('');
           }}
         >
@@ -394,7 +394,8 @@ export function PasteSpectraTable() {
           row >= mapping.start - 1 + (mapping.header ? 1 : 0) &&
           !!grid[row]?.some((v) => v.trim()) &&
           (col === mapping.x || mapping.ys.includes(col)) &&
-          numeric(grid[row]?.[col]) === null
+          numeric(grid[row]?.[col]) === null &&
+          !(mapping.allowEmptyIntensity && col !== mapping.x && !grid[row]?.[col]?.trim())
         }
       />
       {(error || result.error) && <ErrorNote>{error || result.error}</ErrorNote>}

@@ -73,7 +73,7 @@ test('A/B/C 批量删除、预览无正式改动、二次确认、合并导出�
   for (const s of sheetSnapshots(state, 'raw').filter(s => s.tab.name.includes('_AI处理'))) {
     const name = s.tab.name.split('_AI处理')[0]+'.TXT';
     const payload = s.payload as { grid: string[][] };
-    expect(payload.grid.slice(1).map(r => [r[0],r[2]])).toEqual(processed.filter(r => r.来源文件===name).map(r => [String(r.波长_nm),String(r.处理后强度)]));
+    expect(payload.grid.slice(1).map(r => [r[0],r[1]])).toEqual(processed.filter(r => r.来源文件===name).map(r => [String(r.波长_nm),String(r.处理后强度)]));
   }
   await region.getByRole('button', { name: '撤销上次批量编辑', exact: true }).click();
   const undo = await workbook(page);
@@ -147,4 +147,31 @@ test('无效 AI 操作拒绝且没有预览；手机批量界面无横向溢出'
   await expect(region.getByRole('button', { name: '应用建议并生成预览', exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: 'test-results/批量编辑-手机端-2026.10.25.png', fullPage: true });
+});
+
+test('合并自动同步后撤销、重做及单文件更新保留其他文件', async ({ page }) => {
+  await page.route('**/api/ai/chat', async route => {
+    const { input } = route.request().postDataJSON();
+    await route.fulfill({ json: { reply: '删除所选区间', operation: operation(input, [deletion]) } });
+  });
+  const region = await start(page);
+  await region.getByLabel('多文件导入方式').selectOption('combined');
+  await ask(page);
+  await region.getByRole('button', { name: '应用建议并生成预览', exact: true }).click();
+  await confirm(page);
+  const read = () => page.evaluate(() => JSON.parse(localStorage.getItem('perovskite-lab-workspace-v1')!));
+  await expect.poll(async () => (await read()).spectra.length).toBe(3);
+  const before = await read();
+  expect(before.workbooks.raw.tabs).toHaveLength(2);
+  expect(before.rawSheet.grid).toHaveLength(251);
+  expect(before.rawSheet.grid[0]).toEqual(['波长 / nm', 'A.TXT', 'B.TXT', 'C.TXT']);
+  await region.getByRole('button', { name: '撤销上次批量编辑', exact: true }).click();
+  await expect.poll(async () => (await read()).rawSheet.grid.length).toBe(302);
+  expect((await read()).workbooks.raw.tabs).toHaveLength(2);
+  await region.getByRole('button', { name: '重新应用批量编辑', exact: true }).click();
+  await confirm(page);
+  await expect.poll(async () => (await read()).rawSheet.grid.length).toBe(251);
+  await region.getByRole('button', { name: '更新已同步 Sheet', exact: true }).click();
+  await expect.poll(async () => (await read()).spectra.length).toBe(3);
+  expect((await read()).rawSheet.grid).toEqual(before.rawSheet.grid);
 });

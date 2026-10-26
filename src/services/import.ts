@@ -245,6 +245,7 @@ export function mappedImport(file: ImportFile, sheet: number, m: Mapping) {
     if (m.kind === 'long' && (m.name === m.x || m.ys.includes(m.name)))
       throw new Error('样品名称列应与数值列不同');
     const groups = new Map<string, Point[]>();
+    if (m.kind === 'wide' && m.allowEmptyIntensity) m.ys.forEach(col => groups.set(String(col), []));
     for (const row of rows) {
       if (row.every((v) => String(v).trim() === '')) continue;
       const x = numeric(row[m.x]);
@@ -254,6 +255,7 @@ export function mappedImport(file: ImportFile, sheet: number, m: Mapping) {
         continue;
       }
       for (const col of m.ys) {
+        if (m.kind === 'wide' && m.allowEmptyIntensity && !String(row[col] ?? '').trim()) continue;
         const y = numeric(row[col]),
           name =
             m.kind === 'long' ? String(row[m.name] ?? '').trim() : labels[col] || `谱 ${col + 1}`;

@@ -18,6 +18,7 @@ import {
 import {
   baseAiSheetName,
   buildAssistantSheetBundle,
+  buildAssistantSheetsBundle,
   syncAssistantResult,
   type AssistantSheetBuildInput,
 } from '../src/services/assistant-sheet-2026.10.25';
@@ -30,6 +31,7 @@ import {
   switchSheet,
   writeSheetPayload,
 } from '../src/domain/workbook';
+import { preparePastedSpectra } from '../src/services/paste-2026.10.18';
 import type { Point } from '../src/domain/types';
 
 const gaussian = (x: number, centre: number, sigma: number, height: number) =>
@@ -186,13 +188,13 @@ describe('AI 光谱助手 Excel 导出', () => {
     processed.forEach((row, index) => {
       const grid = bundle.payload.grid[index + 1];
       expect(grid[0]).toBe(String(row.波长_nm));
-      expect(grid[1]).toBe(String(row.原始强度));
-      expect(grid[2]).toBe(row.处理后强度 === '' ? '' : String(row.处理后强度));
+      expect(grid).toHaveLength(2);
+      expect(grid[1]).toBe(row.处理后强度 === '' ? '' : String(row.处理后强度));
     });
-    expect(bundle.payload.mapping).toMatchObject({ x: 0, ys: [1, 2], header: true });
-    expect(bundle.payload.spectra).toHaveLength(2);
-    expect(bundle.payload.rawSpectra?.[1].points.length).toBe(bundle.processedPoints);
-    expect(bundle.metadata['raw-2'].title).toBe('处理后强度');
+    expect(bundle.payload.mapping).toMatchObject({ x: 0, ys: [1], header: true });
+    expect(bundle.payload.spectra).toHaveLength(1);
+    expect(bundle.payload.rawSpectra?.[0].points.length).toBe(bundle.processedPoints);
+    expect(bundle.metadata['raw-1'].title).toBe(parsed.fileName);
     expect(assistantReportRows(exportInput).length).toBeGreaterThan(20);
   });
 });
@@ -201,7 +203,7 @@ describe('AI 结果同步到网站 Sheet', () => {
   const base = ensureWorkbooks(blankWorkspace());
   const before = JSON.stringify(capturePayload(base, 'raw'));
 
-  it('creates a new active sheet, keeps the old sheet and plots both curves', () => {
+  it('creates a new active sheet, keeps the old sheet and plots only processed data', () => {
     const outcome = syncAssistantResult(base, sheetInput, {
       mode: 'create',
       sheetName: baseAiSheetName(parsed.fileName),
@@ -213,27 +215,21 @@ describe('AI 结果同步到网站 Sheet', () => {
     expect(wb.tabs.map((tab) => tab.name)).toEqual(['原始光谱', '测试样品(FDS)_AI处理']);
     expect(wb.activeId).toBe(outcome.sheetId);
     expect(JSON.stringify(wb.store.raw)).toBe(before);
-    expect(next.spectra).toHaveLength(2);
+    expect(next.spectra).toHaveLength(1);
     expect(next.spectra.every((spectrum) => spectrum.visible)).toBe(true);
-    expect(next.rawSpectra).toHaveLength(2);
+    expect(next.rawSpectra).toHaveLength(1);
     expect(next.rawColumnSpectra).toEqual({
       'raw-1': next.spectra[0].id,
-      'raw-2': next.spectra[1].id,
     });
     expect(next.rawSheet?.grid).toHaveLength(102);
-    expect(next.rawSheet?.grid[0]).toEqual([
+    expect(next.rawSheet?.grid[0].filter(Boolean)).toEqual([
       '波长 / nm',
-      '原始强度',
-      '处理后强度',
-      '异常标记',
-      '处理方法',
+      parsed.fileName,
     ]);
     expect(next.excitation).toBe('350');
-    expect(next.sheetMetadata?.[outcome.sheetId]?.['raw-2']?.title).toBe('处理后强度');
-    expect(next.rawSheet?.mapping.ys).toEqual([1, 2]);
-    // The processed curve breaks at masked points but the original curve is complete.
-    expect(next.rawSpectra?.[0].points).toHaveLength(101);
-    expect(next.rawSpectra?.[1].points).toHaveLength(97);
+    expect(next.sheetMetadata?.[outcome.sheetId]?.['raw-1']?.title).toBe(parsed.fileName);
+    expect(next.rawSheet?.mapping.ys).toEqual([1]);
+    expect(next.rawSpectra?.[0].points).toHaveLength(97);
   });
 
   it('updates the existing AI sheet in place without adding a new one', () => {
@@ -244,7 +240,7 @@ describe('AI 结果同步到网站 Sheet', () => {
     const afterCreate = ensureWorkbooks({ ...base, ...first.patch });
     const updatedResult = {
       ...result,
-      points: result.points.map((point) => ({ ...point, method: '更新测试' })),
+      points: result.points.map((point) => ({ ...point, processed: 123 })),
     };
     // Update an inactive AI sheet: the sync must also activate it so the chart is visible.
     const atOriginal = ensureWorkbooks({
@@ -261,7 +257,7 @@ describe('AI 结果同步到网站 Sheet', () => {
     const afterUpdate = ensureWorkbooks({ ...atOriginal, ...second.patch });
     expect(afterUpdate.workbooks.raw.tabs).toHaveLength(2);
     expect(afterUpdate.workbooks.raw.activeId).toBe(first.sheetId);
-    expect(afterUpdate.rawSheet?.grid[1][4]).toBe('更新测试');
+    expect(afterUpdate.rawSheet?.grid[1][1]).toBe('123');
     expect(afterUpdate.workbooks.raw.store.raw).toEqual(JSON.parse(before));
   });
 
@@ -312,5 +308,52 @@ describe('AI 结果同步到网站 Sheet', () => {
       ['changed'],
     ]);
     expect(sheetSnapshots(again, 'raw')).toHaveLength(again.workbooks.raw.tabs.length);
+  });
+});
+
+
+describe('processed multi-file Sheet import', () => {
+  const first = { ...sheetInput, sourceId: 'first', result: { ...result,
+    points: result.points.slice(0, 3).map((p, i) => ({ ...p, processed: i === 1 ? null : 10 + i })) } };
+  const second = { ...sheetInput, sourceId: 'second', result: { ...result,
+    points: result.points.slice(1, 4).map((p, i) => ({ ...p, processed: 20 + i, deleted: i === 2 })) } };
+
+  it('aligns different wavelength grids, leaves masked/missing values blank and disambiguates names', () => {
+    const bundle = buildAssistantSheetsBundle([first, second]);
+    expect(bundle.payload.grid).toEqual([
+      ['波长 / nm', parsed.fileName, `${parsed.fileName} (2)`],
+      ['450', '10', ''], ['451', '', '20'], ['452', '12', '21'],
+    ]);
+    expect(bundle.payload.mapping.ys).toEqual([1, 2]);
+    expect(bundle.payload.spectra.map(s => s.points)).toEqual([
+      [{ x: 450, y: 10 }, { x: 452, y: 12 }], [{ x: 451, y: 20 }, { x: 452, y: 21 }],
+    ]);
+    expect(new Set(bundle.payload.spectra.map(s => s.color)).size).toBe(2);
+    const replotted = preparePastedSpectra(bundle.payload.grid, bundle.payload.mapping, 'AI');
+    expect(replotted.spectra.map(s => s.points)).toEqual(bundle.payload.spectra.map(s => s.points));
+    const invalid = bundle.payload.grid.map(row => [...row]);
+    invalid[1][2] = 'bad';
+    expect(() => preparePastedSpectra(invalid, bundle.payload.mapping, 'AI')).toThrow('无效记录');
+    const empty = bundle.payload.grid.map(row => [...row]);
+    empty.slice(1).forEach(row => { row[1] = ''; });
+    expect(() => preparePastedSpectra(empty, bundle.payload.mapping, 'AI')).toThrow('少于 2');
+    expect(buildAssistantSheetsBundle([first, { ...second, audit: { ...audit, excitationNm: 365 } }]).payload.excitation).toBe('');
+  });
+
+  it('updates one file in a shared inactive Sheet without deleting the other file or original sheet', () => {
+    const base = ensureWorkbooks(blankWorkspace());
+    const outcome = syncAssistantResult(base, [first, second], { mode: 'create', sheetName: '合并' });
+    const imported = { ...base, ...outcome.patch };
+    const switched = { ...imported, ...switchSheet(imported, 'raw', 'raw') };
+    const updated = { ...first, result: { ...first.result, points: first.result.points.map(p => ({ ...p, processed: 99 })) } };
+    const next = { ...switched, ...syncAssistantResult(switched, updated, {
+      mode: 'update', targetSheetId: outcome.sheetId, sheetName: '合并', preserveOtherSeries: true,
+    }).patch };
+    expect(next.rawSheet?.grid.slice(1)).toEqual([
+      ['450', '99', ''], ['451', '99', '20'], ['452', '99', '21'],
+    ]);
+    expect(next.spectra.map(s => s.name)).toEqual([parsed.fileName, `${parsed.fileName} (2)`]);
+    expect(next.workbooks?.raw?.tabs).toHaveLength(2);
+    expect(next.workbooks?.raw?.store.raw).toEqual(capturePayload(base, 'raw'));
   });
 });
