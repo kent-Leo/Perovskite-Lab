@@ -33,7 +33,7 @@ export interface AssistantSheetBuildInput {
 }
 
 export interface AssistantSheetBundle {
-  payload: RawSheetPayload;
+  payload: RawSheetPayload & { rawSpectra: Spectrum[] };
   metadata: Record<string, ColumnMetadata>;
   originalSpectrumId: string;
   processedSpectrumId: string;
@@ -114,7 +114,7 @@ export function buildAssistantSheetBundle(input: AssistantSheetBuildInput): Assi
     ['波长 / nm', '原始强度', '处理后强度', '异常标记', '处理方法'],
     ...rows,
   ];
-  const payload: RawSheetPayload = {
+  const payload: AssistantSheetBundle['payload'] = {
     grid,
     mapping: {
       kind: 'wide',
