@@ -1,0 +1,39 @@
+.recognition { display: grid; gap: 20px; }
+.recognition .panel { padding: 22px; }
+.recognition-actions, .recognition-tabs { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.recognition-tabs { margin: 0 0 18px; }
+.recognition-tabs button.selected { color: #196c5c; border-color: #8bb9aa; background: #edf6f1; }
+.recognition-demo, .recognition-warning { color: #8b5c19; background: #fff8e8; border: 1px solid #ead8b3; padding: 10px 14px; border-radius: 7px; }
+.recognition-manage { border-top: 1px solid #e5ebe9; margin-top: 16px; padding-top: 14px; }
+.recognition-manage summary { cursor: pointer; font-weight: 600; margin-bottom: 14px; }
+.recognition-probes { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.recognition-probe { display: flex; gap: 6px; align-items: center; background: #f6f9f7; border: 1px solid #e0e8e3; padding: 8px; border-radius: 7px; }
+.recognition-probe input:not([type]) { width: 100%; min-width: 50px; }
+.recognition input[type=color] { width: 34px; height: 30px; min-width: 34px; padding: 2px; }
+.recognition-probe button { padding: 5px; flex-shrink: 0; }
+.recognition-options .form-grid, .recognition-visual-options .form-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.recognition-issues { display: grid; gap: 5px; margin-top: 10px; }
+.recognition-issues button { color: inherit; background: transparent; text-align: left; border: 0; padding: 3px 0; font-size: 12px; }
+.recognition-issues button:hover { text-decoration: underline; }
+.recognition-colors { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 18px; }
+.recognition-colors fieldset { border: 1px solid #dde7e2; border-radius: 8px; padding: 10px 14px; flex: 1; min-width: 230px; }
+.recognition-colors legend { font-size: 12px; color: #60756c; padding: 0 5px; }
+.recognition-colors label { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; margin: 4px 12px 4px 0; }
+.recognition-snapshot { padding: 12px; border-left: 3px solid #4b8e79; background: #eff6f2; font-size: 13px; line-height: 1.8; }
+.recognition-snapshot strong { color: #9c6725; }
+.recognition-snapshot button { margin-left: 10px; }
+.recognition .worksheet { max-width: 100%; }
+.recognition-data { min-width: 0; }
+.recognition-input-tools { display: grid; gap: 8px; margin-bottom: 14px; }
+.recognition-input-tools label { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+.recognition-input-tools select { width: auto; min-width: 140px; }
+.recognition-input-tools p { margin: 0; }
+.recognition .worksheet .recognition-blank-row > td:not(.is-selected) { background-color: #f0f7f4; }
+.recognition .worksheet .recognition-blank-row > th { background-color: #e3f0e9; }
+.recognition-intro .section-head { align-items: flex-start; }
+@media (max-width: 700px) {
+  .recognition .panel { padding: 14px; }
+  .recognition-probes { grid-template-columns: minmax(0, 1fr); }
+  .recognition .section-head { flex-direction: column; align-items: stretch; gap: 10px; }
+  .recognition-colors fieldset { min-width: 0; width: 100%; flex-basis: 100%; }
+}

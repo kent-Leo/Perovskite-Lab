@@ -1,0 +1,343 @@
+{
+  "date": "2026.10.27",
+  "application": "0.9.1",
+  "worksheet": "0.3.0",
+  "renames": [
+    {
+      "from": "server/ai-handler-2026.10.24.ts",
+      "to": "server/ai-handler-v0.9.1-2026.10.27.ts"
+    },
+    {
+      "from": "server/vite-ai-2026.10.24.ts",
+      "to": "server/vite-ai-v0.9.1-2026.10.27.ts"
+    },
+    {
+      "from": "shared/ai-assistant-2026.10.25.ts",
+      "to": "shared/ai-assistant-v0.9.1-2026.10.27.ts"
+    },
+    {
+      "from": "shared/ai-chat-2026.10.25.ts",
+      "to": "shared/ai-chat-v0.9.1-2026.10.27.ts"
+    },
+    {
+      "from": "shared/ai-contract-2026.10.24.ts",
+      "to": "shared/ai-contract-v0.9.1-2026.10.27.ts"
+    },
+    {
+      "from": "src/components/AiSpectraPanel-2026.10.24.css",
+      "to": "src/components/AiSpectraPanel-v0.9.1-2026.10.27.css"
+    },
+    {
+      "from": "src/components/AiSpectraPanel-2026.10.24.tsx",
+      "to": "src/components/AiSpectraPanel-v0.9.1-2026.10.27.tsx"
+    },
+    {
+      "from": "src/components/AssistantAiSettings-2026.10.25.tsx",
+      "to": "src/components/AssistantAiSettings-v0.9.1-2026.10.27.tsx"
+    },
+    {
+      "from": "src/components/AssistantRecords-2026.10.25.tsx",
+      "to": "src/components/AssistantRecords-v0.9.1-2026.10.27.tsx"
+    },
+    {
+      "from": "src/components/AssistantSpectrumChart-2026.10.25.tsx",
+      "to": "src/components/AssistantSpectrumChart-v0.9.1-2026.10.27.tsx"
+    },
+    {
+      "from": "src/components/PasteSpectraTable-2026.10.18.tsx",
+      "to": "src/components/PasteSpectraTable-v0.9.1-2026.10.27.tsx"
+    },
+    {
+      "from": "src/components/SheetPlotPanel-v0.5.5-2026.10.22.tsx",
+      "to": "src/components/SheetPlotPanel-v0.9.1-2026.10.27.tsx"
+    },
+    {
+      "from": "src/components/Worksheet-v0.2.0-2026.10.19.css",
+      "to": "src/components/Worksheet-v0.3.0-2026.10.27.css"
+    },
+    {
+      "from": "src/components/Worksheet-v0.2.0-2026.10.19.tsx",
+      "to": "src/components/Worksheet-v0.3.0-2026.10.27.tsx"
+    },
+    {
+      "from": "src/components/WorksheetDemo-v0.2.0-2026.10.19.tsx",
+      "to": "src/components/WorksheetDemo-v0.3.0-2026.10.27.tsx"
+    },
+    {
+      "from": "src/components/WorkspaceWorksheet-v0.3.1-2026.10.19.tsx",
+      "to": "src/components/WorkspaceWorksheet-v0.9.1-2026.10.27.tsx"
+    },
+    {
+      "from": "src/domain/assistant-command-2026.10.25.ts",
+      "to": "src/domain/assistant-command-v0.9.1-2026.10.27.ts"
+    },
+    {
+      "from": "src/domain/assistant-context-2026.10.25.ts",
+      "to": "src/domain/assistant-context-v0.9.1-2026.10.27.ts"
+    },
+    {
+      "from": "src/domain/assistant-processing-2026.10.25.ts",
+      "to": "src/domain/assistant-processing-v0.9.1-2026.10.27.ts"
+    },
+    {
+      "from": "src/domain/assistant-scan-range-2026.10.26.ts",
+      "to": "src/domain/assistant-scan-range-v0.9.1-2026.10.27.ts"
+    },
+    {
+      "from": "src/domain/recognition-2026.10.27.ts",
+      "to": "src/domain/recognition-v0.9.1-2026.10.27.ts"
+    },
+    {
+      "from": "src/domain/recognition-charts-2026.10.27.ts",
+      "to": "src/domain/recognition-charts-v0.9.1-2026.10.27.ts"
+    },
+    {
+      "from": "src/domain/spectrum-processing-2026.10.24.ts",
+      "to": "src/domain/spectrum-processing-v0.9.1-2026.10.27.ts"
+    },
+    {
+      "from": "src/domain/worksheet-v0.2.0-2026.10.19.ts",
+      "to": "src/domain/worksheet-v0.3.0-2026.10.27.ts"
+    },
+    {
+      "from": "src/features/AiAssistant-2026.10.25.css",
+      "to": "src/features/AiAssistant-v0.9.1-2026.10.27.css"
+    },
+    {
+      "from": "src/features/AiAssistant-2026.10.25.tsx",
+      "to": "src/features/AiAssistant-v0.9.1-2026.10.27.tsx"
+    },
+    {
+      "from": "src/features/Recognition-2026.10.27.css",
+      "to": "src/features/Recognition-v0.9.1-2026.10.27.css"
+    },
+    {
+      "from": "src/features/Recognition-2026.10.27.tsx",
+      "to": "src/features/Recognition-v0.9.1-2026.10.27.tsx"
+    },
+    {
+      "from": "src/services/ai-assistant-client-2026.10.25.ts",
+      "to": "src/services/ai-assistant-client-v0.9.1-2026.10.27.ts"
+    },
+    {
+      "from": "src/services/ai-client-2026.10.24.ts",
+      "to": "src/services/ai-client-v0.9.1-2026.10.27.ts"
+    },
+    {
+      "from": "src/services/assistant-export-2026.10.25.ts",
+      "to": "src/services/assistant-export-v0.9.1-2026.10.27.ts"
+    },
+    {
+      "from": "src/services/assistant-sheet-2026.10.25.ts",
+      "to": "src/services/assistant-sheet-v0.9.1-2026.10.27.ts"
+    },
+    {
+      "from": "src/services/f7100-2026.10.25.ts",
+      "to": "src/services/f7100-v0.9.1-2026.10.27.ts"
+    },
+    {
+      "from": "src/services/paste-2026.10.18.ts",
+      "to": "src/services/paste-v0.9.1-2026.10.27.ts"
+    },
+    {
+      "from": "src/services/processing-export-2026.10.24.ts",
+      "to": "src/services/processing-export-v0.9.1-2026.10.27.ts"
+    },
+    {
+      "from": "src/services/recognition-export-2026.10.27.ts",
+      "to": "src/services/recognition-export-v0.9.1-2026.10.27.ts"
+    },
+    {
+      "from": "src/state/ai-session-2026.10.24.tsx",
+      "to": "src/state/ai-session-v0.9.1-2026.10.27.tsx"
+    },
+    {
+      "from": "src/version-v0.9.0-2026.10.27.ts",
+      "to": "src/version-v0.9.1-2026.10.27.ts"
+    },
+    {
+      "from": "tests/ai-assistant-relay-2026.10.25.test.ts",
+      "to": "tests/ai-assistant-relay-v0.9.1-2026.10.27.test.ts"
+    },
+    {
+      "from": "tests/ai-chat-2026.10.25.test.ts",
+      "to": "tests/ai-chat-v0.9.1-2026.10.27.test.ts"
+    },
+    {
+      "from": "tests/ai-processing-2026.10.24.test.ts",
+      "to": "tests/ai-processing-v0.9.1-2026.10.27.test.ts"
+    },
+    {
+      "from": "tests/ai-relay-2026.10.24.test.ts",
+      "to": "tests/ai-relay-v0.9.1-2026.10.27.test.ts"
+    },
+    {
+      "from": "tests/assistant-batch-edit-2026.10.25.test.ts",
+      "to": "tests/assistant-batch-edit-v0.9.1-2026.10.27.test.ts"
+    },
+    {
+      "from": "tests/assistant-command-2026.10.25.test.ts",
+      "to": "tests/assistant-command-v0.9.1-2026.10.27.test.ts"
+    },
+    {
+      "from": "tests/assistant-export-sync-2026.10.25.test.ts",
+      "to": "tests/assistant-export-sync-v0.9.1-2026.10.27.test.ts"
+    },
+    {
+      "from": "tests/assistant-processing-2026.10.25.test.ts",
+      "to": "tests/assistant-processing-v0.9.1-2026.10.27.test.ts"
+    },
+    {
+      "from": "tests/assistant-scan-range-2026.10.26.test.ts",
+      "to": "tests/assistant-scan-range-v0.9.1-2026.10.27.test.ts"
+    },
+    {
+      "from": "tests/blank-axis-labels-2026.10.21.test.ts",
+      "to": "tests/blank-axis-labels-v0.9.1-2026.10.27.test.ts"
+    },
+    {
+      "from": "tests/browser/ai-assistant-2026.10.25.spec.ts",
+      "to": "tests/browser/ai-assistant-v0.9.1-2026.10.27.spec.ts"
+    },
+    {
+      "from": "tests/browser/ai-byok-2026.10.24.spec.ts",
+      "to": "tests/browser/ai-byok-v0.9.1-2026.10.27.spec.ts"
+    },
+    {
+      "from": "tests/browser/ai-chat-2026.10.25.spec.ts",
+      "to": "tests/browser/ai-chat-v0.9.1-2026.10.27.spec.ts"
+    },
+    {
+      "from": "tests/browser/assistant-batch-2026.10.25.spec.ts",
+      "to": "tests/browser/assistant-batch-v0.9.1-2026.10.27.spec.ts"
+    },
+    {
+      "from": "tests/browser/assistant-scan-range-2026.10.26.spec.ts",
+      "to": "tests/browser/assistant-scan-range-v0.9.1-2026.10.27.spec.ts"
+    },
+    {
+      "from": "tests/browser/assistant-sheet-import-2026.10.26.spec.ts",
+      "to": "tests/browser/assistant-sheet-import-v0.9.1-2026.10.27.spec.ts"
+    },
+    {
+      "from": "tests/browser/axes-tabs-v0.3.1-2026.10.19.spec.ts",
+      "to": "tests/browser/axes-tabs-v0.9.1-2026.10.27.spec.ts"
+    },
+    {
+      "from": "tests/browser/blank-axis-excel-paste-2026.10.21.spec.ts",
+      "to": "tests/browser/blank-axis-excel-paste-v0.9.1-2026.10.27.spec.ts"
+    },
+    {
+      "from": "tests/browser/chart-values-titles-v0.6.0.spec.ts",
+      "to": "tests/browser/chart-values-titles-v0.9.1-2026.10.27.spec.ts"
+    },
+    {
+      "from": "tests/browser/export-render-v0.4.5.spec.ts",
+      "to": "tests/browser/export-render-v0.9.1-2026.10.27.spec.ts"
+    },
+    {
+      "from": "tests/browser/gradient-units-v0.3.2-2026.10.20.spec.ts",
+      "to": "tests/browser/gradient-units-v0.9.1-2026.10.27.spec.ts"
+    },
+    {
+      "from": "tests/browser/integration-v0.3.1-2026.10.19.spec.ts",
+      "to": "tests/browser/integration-v0.9.1-2026.10.27.spec.ts"
+    },
+    {
+      "from": "tests/browser/legend-drag-v0.4.4.spec.ts",
+      "to": "tests/browser/legend-drag-v0.9.1-2026.10.27.spec.ts"
+    },
+    {
+      "from": "tests/browser/metadata-v0.3.1-2026.10.19.spec.ts",
+      "to": "tests/browser/metadata-v0.9.1-2026.10.27.spec.ts"
+    },
+    {
+      "from": "tests/browser/paste-2026.10.18.spec.ts",
+      "to": "tests/browser/paste-v0.9.1-2026.10.27.spec.ts"
+    },
+    {
+      "from": "tests/browser/raw-plot-continuous-2026.10.21.spec.ts",
+      "to": "tests/browser/raw-plot-continuous-v0.9.1-2026.10.27.spec.ts"
+    },
+    {
+      "from": "tests/browser/recognition-2026.10.27.spec.ts",
+      "to": "tests/browser/recognition-v0.9.1-2026.10.27.spec.ts"
+    },
+    {
+      "from": "tests/browser/release-v0.6.0-2026.10.23.spec.ts",
+      "to": "tests/browser/release-v0.9.1-2026.10.27.spec.ts"
+    },
+    {
+      "from": "tests/browser/table-selection-v0.6.0.spec.ts",
+      "to": "tests/browser/table-selection-v0.9.1-2026.10.27.spec.ts"
+    },
+    {
+      "from": "tests/browser/workbook-sheets-v0.5.5.spec.ts",
+      "to": "tests/browser/workbook-sheets-v0.9.1-2026.10.27.spec.ts"
+    },
+    {
+      "from": "tests/browser/worksheet-editing-v0.5.5.spec.ts",
+      "to": "tests/browser/worksheet-editing-v0.9.1-2026.10.27.spec.ts"
+    },
+    {
+      "from": "tests/browser/worksheet-v0.2.0-2026.10.19.spec.ts",
+      "to": "tests/browser/worksheet-v0.3.0-2026.10.27.spec.ts"
+    },
+    {
+      "from": "tests/chart-axes-v0.3.1-2026.10.19.test.ts",
+      "to": "tests/chart-axes-v0.9.1-2026.10.27.test.ts"
+    },
+    {
+      "from": "tests/chart-values-and-titles-v0.6.0.test.ts",
+      "to": "tests/chart-values-and-titles-v0.9.1-2026.10.27.test.ts"
+    },
+    {
+      "from": "tests/f7100-parse-2026.10.25.test.ts",
+      "to": "tests/f7100-parse-v0.9.1-2026.10.27.test.ts"
+    },
+    {
+      "from": "tests/gradient-units-v0.3.2-2026.10.20.test.ts",
+      "to": "tests/gradient-units-v0.9.1-2026.10.27.test.ts"
+    },
+    {
+      "from": "tests/legend-2026.10.22.test.ts",
+      "to": "tests/legend-v0.9.1-2026.10.27.test.ts"
+    },
+    {
+      "from": "tests/paste-2026.10.18.test.ts",
+      "to": "tests/paste-v0.9.1-2026.10.27.test.ts"
+    },
+    {
+      "from": "tests/peak-raw-metadata-2026.10.22.test.ts",
+      "to": "tests/peak-raw-metadata-v0.9.1-2026.10.27.test.ts"
+    },
+    {
+      "from": "tests/raw-sheet-edit-v0.5.5.test.ts",
+      "to": "tests/raw-sheet-edit-v0.9.1-2026.10.27.test.ts"
+    },
+    {
+      "from": "tests/recognition-2026.10.27.test.ts",
+      "to": "tests/recognition-v0.9.1-2026.10.27.test.ts"
+    },
+    {
+      "from": "tests/workbook-v0.5.5-2026.10.22.test.ts",
+      "to": "tests/workbook-v0.9.1-2026.10.27.test.ts"
+    },
+    {
+      "from": "tests/worksheet-v0.2.0-2026.10.19.test.ts",
+      "to": "tests/worksheet-v0.3.0-2026.10.27.test.ts"
+    },
+    {
+      "from": "worker/ai-worker-2026.10.24.ts",
+      "to": "worker/ai-worker-v0.9.1-2026.10.27.ts"
+    },
+    {
+      "from": "worksheet-v0.2.0-2026.10.19.html",
+      "to": "worksheet-v0.3.0-2026.10.27.html"
+    },
+    {
+      "from": "打开前端-v0.9.0-2026.10.27.command",
+      "to": "打开前端-v0.9.1-2026.10.27.command"
+    }
+  ]
+}

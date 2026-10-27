@@ -17,11 +17,11 @@ import {
   SheetChartGallery,
   type PlotViewMode,
   type SheetGalleryChart,
-} from '../components/SheetPlotPanel-v0.5.5-2026.10.22';
+} from '../components/SheetPlotPanel-v0.9.1-2026.10.27';
 import { ChartPanel } from '../components/ChartPanel';
 import { ErrorNote, Field, Metric, SectionHead } from '../components/ui';
-import { WorkspaceWorksheet as Worksheet } from '../components/WorkspaceWorksheet-v0.3.1-2026.10.19';
-import type { WorksheetColumn } from '../domain/worksheet-v0.2.0-2026.10.19';
+import { WorkspaceWorksheet as Worksheet } from '../components/WorkspaceWorksheet-v0.9.1-2026.10.27';
+import type { WorksheetColumn } from '../domain/worksheet-v0.3.0-2026.10.27';
 import { sheetChartTitle, type ScreeningSheetPayload } from '../domain/workbook';
 import { exportExcel } from '../services/download';
 

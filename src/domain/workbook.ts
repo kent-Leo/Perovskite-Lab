@@ -8,7 +8,7 @@ import type {
   WorkbookId,
   WorkbookTab,
 } from './types';
-import { defaultRecognition, type RecognitionData } from './recognition-2026.10.27';
+import { defaultRecognition, type RecognitionData } from './recognition-v0.9.1-2026.10.27';
 
 /**
  * Multi-sheet workbook model shared by the analysis table areas.
