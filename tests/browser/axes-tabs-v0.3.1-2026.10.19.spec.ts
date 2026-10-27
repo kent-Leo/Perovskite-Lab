@@ -30,7 +30,7 @@ test('all four sheet names commit with Enter or blur, survive navigation/reload,
   await page.waitForTimeout(650);
   await page.reload();
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('perovskite-lab-workspace-v1')!));
-  expect(stored.sheetNames).toEqual({ raw: '实验表 1', screening: '实验表 2', calibration: '实验表 3', gradient: '实验表 4' });
+  expect(stored.sheetNames).toEqual({ raw: '实验表 1', screening: '实验表 2', calibration: '实验表 3', gradient: '实验表 4', recognition: '多探针原始强度' });
   expect(stored.spectra).toHaveLength(6);
   expect(stored.objects).toHaveLength(6);
   expect(stored.calibration).toHaveLength(6);
@@ -115,7 +115,7 @@ test('four axes export to SVG, PNG and PDF with versioned filenames', async ({ p
     const pending = page.waitForEvent('download');
     await page.getByRole('button', { name: format, exact: true }).click();
     const file = await pending;
-    expect(file.suggestedFilename()).toMatch(/-v0\.8\.1-\d{4}\.\d{1,2}\.\d{1,2}\./);
+    expect(file.suggestedFilename()).toMatch(/-v0\.9\.0-\d{4}\.\d{1,2}\.\d{1,2}\./);
     const path = info.outputPath(`四轴-v0.3.1-2026.10.19.${format.toLowerCase()}`);
     await file.saveAs(path);
     const bytes = await readFile(path);

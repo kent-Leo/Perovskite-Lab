@@ -1,6 +1,6 @@
 import type { ProcessingResult } from '../domain/spectrum-processing-2026.10.24';
 import type { AiProvider } from '../../shared/ai-contract-2026.10.24';
-import { APP_VERSION } from '../version-v0.7.0-2026.10.24';
+import { APP_VERSION } from '../version-v0.9.0-2026.10.27';
 import { dateStamp, downloadBlob, filename } from './download';
 export interface ProcessingAudit {
   sheet: string;

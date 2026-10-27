@@ -20,6 +20,9 @@ export function chartSVG(data: PlotData, style: ChartStyle): string {
     y1 = yvals.reduce((a, b) => Math.max(a, b), -Infinity);
   if (bar) { x0 = -0.6; x1 = data.categories!.length - 0.4; }
   else if (x0 === x1) { x0 -= 1; x1 += 1; }
+  else if (data.series.some((s) => s.pointShape || s.arrows)) {
+    const pad = (x1 - x0) * 0.1; x0 -= pad; x1 += pad;
+  }
   if (y0 === y1) { y0 -= 1; y1 += 1; }
   else { const pad = (y1 - y0) * 0.08; y1 += pad; if (y0 < 0) y0 -= pad; }
   const parseBound = (s: string, auto: number) => {
@@ -120,10 +123,30 @@ export function chartSVG(data: PlotData, style: ChartStyle): string {
           `<polyline points="${s.points.map((p) => `${sx(p.x)},${sy(p.y)}`).join(' ')}" fill="none" stroke="${s.color}" stroke-width="${style.lineWidth}" stroke-linejoin="round"${s.dashed || style.dashed ? ' stroke-dasharray="8 5"' : ''}/>`,
         );
       if (style.points || s.kind === 'scatter')
-        for (const p of s.points)
-          out.push(
-            `<circle cx="${sx(p.x)}" cy="${sy(p.y)}" r="${style.pointSize}" fill="${s.color}"/>`,
+        for (const p of s.points) {
+          const x = sx(p.x), y = sy(p.y), r = style.pointSize;
+          out.push(`<g data-point="true" opacity="${s.opacity ?? 1}">`);
+          if (p.tooltip) out.push(`<title>${escapeXML(p.tooltip)}</title>`);
+          if (s.arrows) {
+            line(sx(0), sy(0), x, y, s.color, style.lineWidth);
+            const angle = Math.atan2(y - sy(0), x - sx(0)), head = 10;
+            line(x, y, x - head * Math.cos(angle - 0.4), y - head * Math.sin(angle - 0.4), s.color, style.lineWidth);
+            line(x, y, x - head * Math.cos(angle + 0.4), y - head * Math.sin(angle + 0.4), s.color, style.lineWidth);
+          } else if (s.pointShape === 'square')
+            out.push(`<rect x="${x - r}" y="${y - r}" width="${r * 2}" height="${r * 2}" fill="${s.color}"/>`);
+          else if (s.pointShape === 'triangle' || s.pointShape === 'diamond') {
+            const points = s.pointShape === 'triangle'
+              ? `${x},${y - r * 1.4} ${x - r * 1.2},${y + r} ${x + r * 1.2},${y + r}`
+              : `${x},${y - r * 1.4} ${x - r * 1.4},${y} ${x},${y + r * 1.4} ${x + r * 1.4},${y}`;
+            out.push(`<polygon points="${points}" fill="${s.color}"/>`);
+          } else out.push(`<circle cx="${x}" cy="${y}" r="${r}" fill="${s.color}"/>`);
+          out.push('</g>');
+          if (s.labels && p.label) text(
+            Math.min(left + pw - 8, Math.max(left + 8, x + r + 4)),
+            Math.max(top + fs, Math.min(top + ph - 4, s.arrows && y >= sy(0) ? y + fs + 10 : y - r - 6)),
+            p.label, x > left + pw * 0.8 ? 'end' : 'start', Math.max(10, fs * 0.8), 'data-sample-label="true"',
           );
+        }
     }
   }
   out.push('</g>');

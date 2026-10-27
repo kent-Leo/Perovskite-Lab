@@ -36,6 +36,7 @@ const LEGACY_NAMES: Record<WorkbookId, string> = {
   screening: '旧筛选表',
   calibration: '旧校准表',
   gradient: '旧梯度表',
+  recognition: '多探针原始强度',
 };
 
 const spectrum = (id: string, name: string): Spectrum => ({
@@ -346,6 +347,7 @@ describe('ensureWorkbooks: v0.4.5 migration', () => {
       screening: DEFAULT_SHEET_NAMES.screening,
       calibration: DEFAULT_SHEET_NAMES.calibration,
       gradient: DEFAULT_SHEET_NAMES.gradient,
+      recognition: DEFAULT_SHEET_NAMES.recognition,
     });
   });
 });

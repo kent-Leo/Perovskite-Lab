@@ -65,6 +65,8 @@ export type WorksheetProps = {
   // Extra editable header row shown below 名称 / 单位 / 备注 (for example colors).
   extraHeaderRow?: { label: string; render: (column: number) => ReactNode };
   minRows?: number;
+  /** Optional whole-document history, including probe / row structure changes. */
+  externalHistory?: { canUndo: boolean; canRedo: boolean; undo: () => void; redo: () => void };
 };
 const firstCell = { row: 0, column: 0 };
 
@@ -100,6 +102,7 @@ export function Worksheet({
   renderCell,
   extraHeaderRow,
   minRows = 6,
+  externalHistory,
 }: WorksheetProps) {
   const tabs = sheetTabs ?? [];
   // The tab bar replaces the legacy single tab only when it can actually switch sheets.
@@ -250,6 +253,11 @@ export function Worksheet({
     setMessage('');
   }
   function undo(redo = false) {
+    if (externalHistory) {
+      (redo ? externalHistory.redo : externalHistory.undo)();
+      setEditing(false);
+      return;
+    }
     if (!onChange) return;
     const from = redo ? history.current.future : history.current.past,
       to = redo ? history.current.past : history.current.future,
@@ -540,7 +548,7 @@ export function Worksheet({
         <button
           type="button"
           aria-label="撤销工作表修改"
-          disabled={!historyCounts.past}
+          disabled={externalHistory ? !externalHistory.canUndo : !historyCounts.past}
           onClick={() => undo()}
         >
           <Undo2 size={14} />
@@ -549,7 +557,7 @@ export function Worksheet({
         <button
           type="button"
           aria-label="重做工作表修改"
-          disabled={!historyCounts.future}
+          disabled={externalHistory ? !externalHistory.canRedo : !historyCounts.future}
           onClick={() => undo(true)}
         >
           <Redo2 size={14} />
@@ -692,8 +700,8 @@ export function Worksheet({
               <tr className="worksheet-label-row" key={field}>
                 <th scope="row">{['名称', '单位', '备注'][i]}</th>
                 {columns.map((col, c) => (
-                  <td key={col.key}>
-                    {onMetadataChange ? (
+                  <td key={col.key} style={col.color ? { borderTop: `3px solid ${col.color}` } : undefined}>
+                    {onMetadataChange && (!col.headerFields || col.headerFields.includes(field)) ? (
                       <input
                         aria-label={`${activeSheet} 第 ${c + 1} 列${['名称', '单位', '备注'][i]}`}
                         title="单击全选；可粘贴一行或多行单列值，按列横向填入"
