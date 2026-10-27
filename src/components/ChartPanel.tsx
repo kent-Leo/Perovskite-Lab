@@ -12,6 +12,7 @@ export function ChartPanel({
   chartTitle,
   onChartTitleChange,
   subtitle,
+  custom,
 }: {
   kind: 'spectra' | 'screening' | 'calibration';
   data: PlotData;
@@ -21,14 +22,21 @@ export function ChartPanel({
   chartTitle: string;
   onChartTitleChange: (title: string) => void;
   subtitle?: string;
+  /** Reuse the same style editor, persistence callback and portable SVG/PNG exporter. */
+  custom?: {
+    id: string; name: string; style: ChartStyle;
+    onChange: (patch: Partial<ChartStyle>) => void;
+    renderSVG?: (style: ChartStyle) => string;
+    categorical?: boolean;
+  };
 }) {
   const { w, update, notify } = useWorkspace(),
-    style = w.styles[kind];
+    style = custom?.style ?? w.styles[kind];
   const [settings, setSettings] = useState(true),
     [tab, setTab] = useState('appearance'),
     [axisSide, setAxisSide] = useState<AxisSide>('bottom'),
     [busy, setBusy] = useState('');
-  const set = (p: Partial<ChartStyle>) =>
+  const set = (p: Partial<ChartStyle>) => custom ? custom.onChange(p) :
     update((prev) => ({ styles: { ...prev.styles, [kind]: { ...prev.styles[kind], ...p } } }));
   const legendDrag = useRef<{
     pointerId: number;
@@ -88,27 +96,26 @@ export function ChartPanel({
       set({ legend: 'free', legendX: x, legendY: y });
   }
   const axis = chartAxes(style)[axisSide];
-  const setAxis = (patch: Partial<AxisStyle>) => update((prev) => {
-    const current = prev.styles[kind];
+  const setAxis = (patch: Partial<AxisStyle>) => {
     const { label, ...settings } = patch;
     const labels = label === undefined ? {} : axisSide === 'bottom' ? { xLabel: label }
       : axisSide === 'left' ? { yLabel: label } : {};
-    return { styles: { ...prev.styles, [kind]: { ...current, ...labels,
-      axes: { ...current.axes, [axisSide]: { ...current.axes?.[axisSide],
+    set({ ...labels,
+      axes: { ...style.axes, [axisSide]: { ...style.axes?.[axisSide],
         ...settings, ...(label !== undefined && (axisSide === 'top' || axisSide === 'right') ? { label } : {}),
       } },
-    } } };
-  });
+    });
+  };
   // Each sheet keeps its own chart title; the page default only fills a blank one.
   const effectiveTitle = chartTitle.trim() || title,
     chartStyle = useMemo(() => ({ ...style, title: effectiveTitle }), [style, effectiveTitle]);
   const chart = useMemo(() => {
     try {
-      return { svg: chartSVG(data, chartStyle), error: '' };
+      return { svg: custom?.renderSVG ? custom.renderSVG(chartStyle) : chartSVG(data, chartStyle), error: '' };
     } catch (e) {
       return { svg: '', error: (e as Error).message };
     }
-  }, [data, chartStyle]);
+  }, [data, chartStyle, custom?.renderSVG]);
   async function save(format: 'png' | 'svg' | 'pdf') {
     setBusy(format);
     try {
@@ -116,7 +123,7 @@ export function ChartPanel({
         chart.svg,
         format,
         chartStyle,
-        kind === 'spectra' ? '荧光光谱' : kind === 'screening' ? '对象筛选' : '校准曲线',
+        custom?.name ?? (kind === 'spectra' ? '荧光光谱' : kind === 'screening' ? '对象筛选' : '校准曲线'),
       );
       notify(`${format.toUpperCase()} 图表已导出`);
     } catch (e) {
@@ -146,7 +153,7 @@ export function ChartPanel({
           {chart.svg ? (
             <div
               className="svg-chart"
-              data-testid={`${kind}-chart`}
+              data-testid={`${custom?.id ?? kind}-chart`}
               onPointerDown={startLegendDrag}
               onPointerMove={moveLegend}
               onPointerUp={endLegendDrag}
@@ -164,7 +171,7 @@ export function ChartPanel({
             <Download size={15} /> 导出图表
           </span>
           <div>
-            {(['png', 'svg', 'pdf'] as const).map((format, i) => {
+            {(custom ? ['png', 'svg'] as const : ['png', 'svg', 'pdf'] as const).map((format, i) => {
               const Icon = [Image, FileCode2, FileText][i];
               return (
                 <button
@@ -201,7 +208,7 @@ export function ChartPanel({
           </div>
           {tab === 'appearance' && (
             <>
-              {kind !== 'spectra' && (
+              {!custom && kind !== 'spectra' && (
                 <div className="form-grid">
                   <Field label="数据色">
                     <input
@@ -247,6 +254,7 @@ export function ChartPanel({
                     type="number"
                     min={1}
                     max={12}
+                    disabled={custom?.categorical}
                     value={style.pointSize}
                     onChange={(e) =>
                       set({ pointSize: Math.max(1, Math.min(12, Number(e.target.value))) })
@@ -346,8 +354,8 @@ export function ChartPanel({
                   </button>
                 </>
               )}
-              <p className="muted">图例可直接在图中拖动；位置与字号随 PNG / SVG / PDF 导出。</p>
-              <label className="check-line">
+              <p className="muted">图例可直接在图中拖动；位置与字号随 {custom ? 'PNG / SVG' : 'PNG / SVG / PDF'} 导出。</p>
+              {!custom?.categorical && <><label className="check-line">
                 <input
                   type="checkbox"
                   checked={style.grid}
@@ -355,14 +363,14 @@ export function ChartPanel({
                 />
                 显示网格
               </label>
-              <label className="check-line">
+              {!custom && <label className="check-line">
                 <input
                   type="checkbox"
                   checked={style.points}
                   onChange={(e) => set({ points: e.target.checked })}
                 />
                 显示数据点
-              </label>
+              </label>}
               <label className="check-line">
                 <input
                   type="checkbox"
@@ -371,19 +379,24 @@ export function ChartPanel({
                 />
                 显示数据点数值
               </label>
-              <label className="check-line">
+              {!custom && <label className="check-line">
                 <input
                   type="checkbox"
                   checked={style.dashed}
                   onChange={(e) => set({ dashed: e.target.checked })}
                 />
                 虚线
-              </label>
+              </label>}
+              </>}
             </>
           )}
           {tab === 'axes' && (
             <>
-              <div className="axis-editor">
+              {custom?.categorical ? <>
+                <Field label="下轴名称"><input value={style.xLabel} onChange={(e) => set({ xLabel: e.target.value })} /></Field>
+                <Field label="左轴名称"><input value={style.yLabel} onChange={(e) => set({ yLabel: e.target.value })} /></Field>
+                <p className="muted">样本顺序由完整响应矩阵的 Ward 树确定。</p>
+              </> : <><div className="axis-editor">
                 <div className="axis-side-tabs" role="group" aria-label="选择坐标轴">
                   {axisSides.map((side) => (
                     <button key={side} type="button" aria-pressed={axisSide === side}
@@ -439,6 +452,7 @@ export function ChartPanel({
                   </Field>
                 ))}
               </div>
+              </>}
             </>
           )}
           {tab === 'export' && (
@@ -468,7 +482,7 @@ export function ChartPanel({
                 <strong>{Math.round((style.widthCm / 2.54) * style.dpi)} px</strong>
                 <span>PNG 宽度 · 白色背景</span>
               </div>
-              <p className="muted">SVG / PDF 保留矢量。PDF 使用内置中文与科学字符字体。</p>
+              <p className="muted">{custom ? 'SVG 保留矢量；SVG 与 PNG 均使用内置中文与科学字符字体。' : 'SVG / PDF 保留矢量。PDF 使用内置中文与科学字符字体。'}</p>
             </>
           )}
         </aside>

@@ -1,7 +1,7 @@
 import { test, expect, type Locator } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import * as XLSX from 'xlsx';
-import { APP_VERSION } from '../../src/version-v0.7.0-2026.10.24';
+import { APP_VERSION } from '../../src/version-v0.9.0-2026.10.27';
 
 async function paste(cell: Locator, value: string) {
   await cell.evaluate((el, value) => {
@@ -154,7 +154,7 @@ test('gradient stays editable on errors, recalculates, undoes changes and export
   const downloaded = page.waitForEvent('download');
   await page.getByRole('button', { name: '导出 Excel', exact: true }).click();
   const file = await downloaded;
-  expect(file.suggestedFilename()).toMatch(/-v0\.8\.1-\d{4}\.\d{1,2}\.\d{1,2}\.xlsx$/);
+  expect(file.suggestedFilename()).toMatch(/-v0\.9\.0-\d{4}\.\d{1,2}\.\d{1,2}\.xlsx$/);
   const path = info.outputPath('梯度-v0.7.0-2026.10.24.xlsx');
   await file.saveAs(path);
   const records = XLSX.utils.sheet_to_json<Record<string, unknown>>(

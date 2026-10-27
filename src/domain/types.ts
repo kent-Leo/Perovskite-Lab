@@ -27,6 +27,8 @@ export const palette = [
 export interface Point {
   x: number;
   y: number;
+  label?: string;
+  tooltip?: string;
 }
 export interface Spectrum {
   id: string;
@@ -123,6 +125,10 @@ export interface Series {
   dashed?: boolean;
   /** Set to false for derived lines (for example a fit) that are not measured data points. */
   showPointValues?: boolean;
+  pointShape?: 'circle' | 'square' | 'triangle' | 'diamond';
+  opacity?: number;
+  labels?: boolean;
+  arrows?: boolean;
 }
 export interface PlotData {
   series: Series[];
@@ -188,7 +194,7 @@ export interface GradientSettings {
   unit: string;
   targetUnit?: string;
 }
-export type WorkbookId = 'raw' | 'screening' | 'calibration' | 'gradient';
+export type WorkbookId = 'raw' | 'screening' | 'calibration' | 'gradient' | 'recognition';
 export interface WorkbookTab {
   id: string;
   name: string;

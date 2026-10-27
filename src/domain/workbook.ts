@@ -8,9 +8,10 @@ import type {
   WorkbookId,
   WorkbookTab,
 } from './types';
+import { defaultRecognition, type RecognitionData } from './recognition-2026.10.27';
 
 /**
- * Multi-sheet workbook model shared by the four table areas.
+ * Multi-sheet workbook model shared by the analysis table areas.
  *
  * Invariant: the active tab's payload lives in the workspace's top-level fields
  * (spectra/objects/calibration/gradient…); every other tab's payload lives in
@@ -18,13 +19,14 @@ import type {
  * applies the target payload back to the top-level fields, so all existing page
  * components keep reading the same fields they always did.
  */
-export const WORKBOOK_IDS: WorkbookId[] = ['raw', 'screening', 'calibration', 'gradient'];
+export const WORKBOOK_IDS: WorkbookId[] = ['raw', 'screening', 'calibration', 'gradient', 'recognition'];
 
 export const WORKBOOK_LABELS: Record<WorkbookId, string> = {
   raw: '光谱工作台',
   screening: '对象筛选',
   calibration: '校准与检出限',
   gradient: '浓度梯度',
+  recognition: '多探针识别分析',
 };
 
 export const DEFAULT_SHEET_NAMES: Record<WorkbookId, string> = {
@@ -32,6 +34,7 @@ export const DEFAULT_SHEET_NAMES: Record<WorkbookId, string> = {
   screening: '分析对象',
   calibration: '校准数据',
   gradient: '梯度配液',
+  recognition: '多探针原始强度',
 };
 
 export const MAX_SHEETS = 20;
@@ -72,12 +75,14 @@ export interface CalibrationSheetPayload {
 export interface GradientSheetPayload {
   gradient: GradientSettings;
 }
+export interface RecognitionSheetPayload { recognition: RecognitionData }
 
 export type SheetPayload =
   | RawSheetPayload
   | ScreeningSheetPayload
   | CalibrationSheetPayload
-  | GradientSheetPayload;
+  | GradientSheetPayload
+  | RecognitionSheetPayload;
 
 export interface WorkbookState {
   tabs: WorkbookTab[];
@@ -90,6 +95,8 @@ export type Workbooks = Record<WorkbookId, WorkbookState>;
 
 /** Fields the workbook model reads from / writes to the workspace. */
 export interface WorkbookHost {
+  /** Optional on pre-v0.9 workspaces. */
+  recognition?: RecognitionData;
   calUnit: string;
   excitation?: string;
   rawColumnSpectra?: Record<string, string>;
@@ -140,6 +147,8 @@ export function defaultPayload(
   unit = 'µmol/L',
 ): SheetPayload {
   switch (page) {
+    case 'recognition':
+      return { recognition: defaultRecognition() };
     case 'raw':
       return {
         grid: blankGrid(),
@@ -438,6 +447,7 @@ export function ensureWorkbooks<T extends WorkbookHost>(
   }
   return {
     ...w,
+    recognition: w.recognition ?? defaultRecognition(),
     rawSheet: normalizeRawSheet(w.rawSheet, w.calUnit),
     workbooks,
     sheetNames,
@@ -447,6 +457,8 @@ export function ensureWorkbooks<T extends WorkbookHost>(
 /** Read the active tab's data out of the top-level workspace fields. */
 export function capturePayload(w: WorkbookHost, page: WorkbookId): SheetPayload {
   switch (page) {
+    case 'recognition':
+      return { recognition: w.recognition ?? defaultRecognition() };
     case 'raw':
       return {
         grid: w.rawSheet?.grid ?? blankGrid(),
@@ -483,6 +495,8 @@ export function applyPayload(
   payload: SheetPayload,
 ): Partial<WorkbookHost> {
   switch (page) {
+    case 'recognition':
+      return { recognition: (payload as RecognitionSheetPayload).recognition ?? defaultRecognition() };
     case 'raw': {
       const raw = payload as RawSheetPayload;
       return {

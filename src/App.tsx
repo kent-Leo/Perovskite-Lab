@@ -1,4 +1,4 @@
-import { APP_VERSION } from './version-v0.7.0-2026.10.24';
+import { APP_VERSION } from './version-v0.9.0-2026.10.27';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity,
@@ -25,6 +25,7 @@ import { Spectra } from './features/Spectra';
 import { Screening } from './features/Screening';
 import { Calibration } from './features/Calibration';
 import { Gradient } from './features/Gradient';
+import { Recognition } from './features/Recognition-2026.10.27';
 import { AiAssistant } from './features/AiAssistant-2026.10.25';
 import { ImportDialog } from './components/ImportDialog';
 import { PasteSpectraTable } from './components/PasteSpectraTable-2026.10.18';
@@ -62,6 +63,12 @@ const pages = [
     label: '浓度梯度',
     icon: FlaskConical,
     detail: '设定目标浓度，生成每组实验的配液用量。',
+  },
+  {
+    id: 'recognition',
+    label: '多探针识别分析',
+    icon: ChartScatter,
+    detail: '按实验行整理多探针响应，计算猝灭率、PCA 与层次聚类。',
   },
   { id: 'extensions', label: '后续扩展', icon: Layers3, detail: '连接实验、项目与文献的下一步。' },
 ];
@@ -116,6 +123,7 @@ export default function App() {
     );
   }
   const current = pages.find((p) => p.id === page)!;
+  const showingDemo = page === 'recognition' ? !!w.recognition?.demo : w.demo;
   return (
     <div className="app-shell">
       <aside className={`sidebar ${mobileOpen ? 'open' : ''}`}>
@@ -147,7 +155,7 @@ export default function App() {
         </div>
         <div className="nav-label">数据分析</div>
         <nav>
-          {pages.slice(0, 5).map((p) => (
+          {pages.filter((p) => p.id !== 'extensions').map((p) => (
             <a
               key={p.id}
               href={`#${p.id}`}
@@ -226,10 +234,10 @@ export default function App() {
               <p>{current.detail}</p>
             </div>
             <div className="page-actions">
-              <button onClick={resetDemo}>
+              {page !== 'recognition' && <button onClick={resetDemo}>
                 <RotateCcw size={16} />
                 载入示例
-              </button>
+              </button>}
               {(page === 'spectra' || page === 'screening' || page === 'calibration') && (
                 <button
                   className="primary"
@@ -250,11 +258,11 @@ export default function App() {
             </div>
           </div>
           {storageError && <ErrorNote>{storageError}</ErrorNote>}
-          <div className={`workspace-status ${w.demo ? 'demo' : ''}`}>
+          <div className={`workspace-status ${showingDemo ? 'demo' : ''}`}>
             <div>
-              {w.demo ? <FlaskConical size={16} /> : <Check size={16} />}
+              {showingDemo ? <FlaskConical size={16} /> : <Check size={16} />}
               <span>
-                {w.demo
+                {showingDemo
                   ? '示例工作区 · 当前数据为人工生成，仅用于体验功能'
                   : '当前工作区 · 自动保存在此浏览器'}
               </span>
@@ -319,6 +327,7 @@ export default function App() {
           {page === 'screening' && <Screening onImport={() => openImport('objects')} />}
           {page === 'calibration' && <Calibration onImport={() => openImport('calibration')} />}
           {page === 'gradient' && <Gradient />}
+          {page === 'recognition' && <Recognition />}
           {page === 'extensions' && (
             <div className="extension-grid">
               {[

@@ -1,7 +1,7 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { APP_VERSION } from '../../src/version-v0.7.0-2026.10.24';
+import { APP_VERSION } from '../../src/version-v0.9.0-2026.10.27';
 import { dateStamp } from '../../src/services/download';
 
 /**

@@ -1,0 +1,33 @@
+{
+  "date": "2026.10.27",
+  "version": "v0.9.0",
+  "branch": "feature/v0.9.0",
+  "unitTests": {
+    "passed": 251,
+    "newRecognitionTests": 25
+  },
+  "browserTests": {
+    "passed": 105,
+    "newRecognitionTests": 7
+  },
+  "build": "passed; existing >500 kB fontkit chunk warning",
+  "numericalReference": "NumPy 2.4.6 SVD / SciPy 1.17.1 Ward; both center and sample-Z-score",
+  "limits": {
+    "samplesPerSheet": 500,
+    "probesPerSheet": 24,
+    "sheetsPerWorkbook": 20
+  },
+  "localOnly": true,
+  "pushed": false,
+  "merged": false,
+  "deployed": false,
+  "preservedUserChanges": [
+    "删除旧 v0.7.0 启动脚本",
+    "未跟踪的 打开前端-v0.8.2.command"
+  ],
+  "cleanup": [
+    "恢复旧回归测试覆盖的两张已跟踪截图",
+    "移除本次新生成的历史截图目录和临时文件",
+    "移除早期重复的内嵌字体 SVG，保留最终测试输出和已检查的 PNG"
+  ]
+}

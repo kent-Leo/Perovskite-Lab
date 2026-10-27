@@ -1,0 +1,14 @@
+
+> perovskite-lab@0.9.0 test
+> vitest run --reporter=dot
+
+
+ RUN  v3.2.7 /Users/liuzhe/Documents/deepseek-harness/default-workspace/Perovskite-Lab
+
+···························································································································································································································································
+
+ Test Files  23 passed (23)
+      Tests  251 passed (251)
+   Start at  17:10:31
+   Duration  2.16s (transform 1.11s, setup 0ms, collect 3.18s, tests 2.56s, environment 3ms, prepare 1.78s)
+

@@ -1,8 +1,9 @@
 import Papa from 'papaparse';
+import { APP_VERSION } from '../version-v0.9.0-2026.10.27';
 import { numeric } from './math';
 import { readTextTable } from '../services/import';
 
-export const WORKSHEET_VERSION = '0.2.0';
+export const WORKSHEET_VERSION = APP_VERSION;
 export const WORKSHEET_LIMITS = {
   rows: 100001,
   columns: 64,
@@ -14,6 +15,8 @@ export type CellSelection = { anchor: CellAddress; focus: CellAddress };
 export type WorksheetColumn = {
   key: string;
   title: string;
+  color?: string;
+  headerFields?: ('title' | 'unit' | 'comment')[];
   designation?: 'X' | 'Y' | 'Label' | 'Meta' | 'Result';
   unit?: string;
   comment?: string;

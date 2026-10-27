@@ -9,7 +9,7 @@ test.beforeEach(async ({ page }) => {
 test('displays version, edits data and restores derived results with undo/redo', async ({
   page,
 }) => {
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('v0.2.0');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('v0.9.0');
   await page.getByRole('textbox', { name: 'Sheet1 B1', exact: true }).fill('120');
   await expect(page.getByLabel('Sheet1 D1', { exact: true })).toHaveText('80');
   await page.getByRole('button', { name: '撤销工作表修改', exact: true }).click();

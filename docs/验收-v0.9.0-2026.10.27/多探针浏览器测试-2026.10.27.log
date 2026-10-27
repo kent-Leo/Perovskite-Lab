@@ -1,0 +1,14 @@
+
+Running 7 tests using 1 worker
+
+(node:51761) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/browser/recognition-2026.10.27.spec.ts:27:1 › quenching formula, real-time recalculation, raw preservation and whole-sheet undo / redo (1.3s)
+  ✓  2 tests/browser/recognition-2026.10.27.spec.ts:46:1 › probe renaming, sorting, insertion, deletion and undo preserve stable measurement IDs (985ms)
+  ✓  3 tests/browser/recognition-2026.10.27.spec.ts:65:1 › batch-specific blanks, free ion labels, paste, explicit invalid cells and no stale chart (1.1s)
+  ✓  4 tests/browser/recognition-2026.10.27.spec.ts:88:1 › multi-Sheet regional paste, refresh, independent replicas and read-only result snapshots (3.1s)
+  ✓  5 tests/browser/recognition-2026.10.27.spec.ts:121:1 › Excel and SVG / PNG export match the visible analysis, full precision, Chinese and ion glyphs (10.3s)
+  ✓  6 tests/browser/recognition-2026.10.27.spec.ts:169:1 › rank one and zero variance are explicit, colors do not change coordinates, mobile layout works (871ms)
+  ✓  7 tests/browser/recognition-2026.10.27.spec.ts:191:1 › probe selection, cut height, chart styles and four color settings persist independently (1.8s)
+
+  7 passed (20.7s)
