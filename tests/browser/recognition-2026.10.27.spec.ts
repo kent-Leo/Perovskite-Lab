@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import * as XLSX from 'xlsx';
 
-const evidence = path.resolve('docs/验收-v0.9.0-2026.10.27');
+const evidence = path.resolve('docs/验收-多探针猝灭率-2026.10.28');
 mkdirSync(evidence, { recursive: true });
 const moduleOf = (page: Page) => page.getByTestId('recognition-module');
 const view = (page: Page, name: string) => moduleOf(page).getByRole('group', { name: '分析数据视图' }).getByRole('button', { name, exact: true }).click();
@@ -24,23 +24,22 @@ async function persisted(page: Page) {
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('perovskite-lab-workspace-v1') || '{}').recognition?.rows.length)).toBe(6);
 }
 
-test('quenching formula, real-time recalculation, raw preservation and whole-sheet undo / redo', async ({ page }) => {
+test('direct decimal / percentage input, real-time recalculation and whole-sheet undo / redo', async ({ page }) => {
   await demo(page);
-  await view(page, '猝灭率');
-  await expect(cell(page, 0, 3)).toContainText('0.7400'); await expect(cell(page, 0, 4)).toContainText('74.0000%');
-  await expect(cell(page, 4, 3)).toContainText('-0.2100'); await expect(cell(page, 4, 4)).toContainText('-21.0000%');
-  await view(page, '原始强度');
-  const input = moduleOf(page).getByLabel('原始强度 第 1 行第 5 列', { exact: true });
+  const m = moduleOf(page);
+  await expect(m.getByRole('group', { name: '分析数据视图' }).getByRole('button', { name: '原始强度', exact: true })).toHaveCount(0);
+  await expect(m.getByRole('button', { name: '添加空白批次', exact: true })).toHaveCount(0);
+  const input = m.getByLabel('猝灭率 第 1 行第 4 列', { exact: true });
+  await expect(input).toHaveValue('0.74');
+  await expect(m.getByLabel('猝灭率 第 5 行第 4 列', { exact: true })).toHaveValue('-0.21');
   const before = await page.getByTestId('recognition-scores-chart').locator('[data-point] circle').first().getAttribute('cx');
-  await input.fill('300');
+  await input.fill('70%');
   await expect(page.getByTestId('recognition-scores-chart').locator('[data-point] circle').first()).not.toHaveAttribute('cx', before!);
-  await view(page, '猝灭率'); await expect(cell(page, 0, 3)).toContainText('0.7000');
-  await view(page, '原始强度');
-  await moduleOf(page).getByLabel('撤销工作表修改', { exact: true }).click(); await expect(input).toHaveValue('260');
-  await moduleOf(page).getByLabel('重做工作表修改', { exact: true }).click(); await expect(input).toHaveValue('300');
-  await expect(moduleOf(page).getByLabel('原始强度 第 5 行第 5 列', { exact: true })).toHaveValue('1210');
-  await view(page, '猝灭率');
-  await moduleOf(page).locator('.recognition-data').screenshot({ path: path.join(evidence, '猝灭率与负值-2026.10.27.png') });
+  await chart(page, '响应热图与树状图');
+  await expect(page.getByTestId('recognition-heatmap-chart').locator('[data-heat-row="0"][data-probe-id="probe-1"]')).toHaveAttribute('data-value', '0.7');
+  await m.getByLabel('撤销工作表修改', { exact: true }).click(); await expect(input).toHaveValue('0.74');
+  await m.getByLabel('重做工作表修改', { exact: true }).click(); await expect(input).toHaveValue('70%');
+  await m.locator('.recognition-data').screenshot({ path: path.join(evidence, '猝灭率直接录入-2026.10.28.png') });
 });
 
 test('probe renaming, sorting, insertion, deletion and undo preserve stable measurement IDs', async ({ page }) => {
@@ -48,41 +47,38 @@ test('probe renaming, sorting, insertion, deletion and undo preserve stable meas
   await moduleOf(page).getByLabel('探针名称 1', { exact: true }).fill('探针甲 Fe³⁺');
   await moduleOf(page).getByLabel('下移探针 1', { exact: true }).click();
   await expect(moduleOf(page).getByLabel('探针名称 2', { exact: true })).toHaveValue('探针甲 Fe³⁺');
-  await expect(moduleOf(page).getByLabel('原始强度 第 1 行第 5 列', { exact: true })).toHaveValue('810');
-  await expect(moduleOf(page).getByLabel('原始强度 第 1 行第 6 列', { exact: true })).toHaveValue('260');
+  await expect(moduleOf(page).getByLabel('猝灭率 第 1 行第 4 列', { exact: true })).toHaveValue('0.19');
+  await expect(moduleOf(page).getByLabel('猝灭率 第 1 行第 5 列', { exact: true })).toHaveValue('0.74');
   await moduleOf(page).getByRole('button', { name: '添加探针', exact: true }).click();
   await expect(page.getByTestId('recognition-scores-chart')).toHaveCount(0);
   await expect(moduleOf(page).getByRole('alert')).toContainText('缺失');
   await moduleOf(page).getByLabel('删除探针 4', { exact: true }).click();
   await expect(page.getByTestId('recognition-scores-chart').locator('[data-point]')).toHaveCount(6);
   await moduleOf(page).getByLabel('删除探针 1', { exact: true }).click();
-  await expect(moduleOf(page).getByLabel('原始强度 第 1 行第 5 列', { exact: true })).toHaveValue('260');
+  await expect(moduleOf(page).getByLabel('猝灭率 第 1 行第 4 列', { exact: true })).toHaveValue('0.74');
   await moduleOf(page).getByLabel('撤销工作表修改', { exact: true }).click();
-  await expect(moduleOf(page).getByLabel('原始强度 第 1 行第 5 列', { exact: true })).toHaveValue('810');
-  await expect(moduleOf(page).getByLabel('原始强度 第 1 行第 6 列', { exact: true })).toHaveValue('260');
+  await expect(moduleOf(page).getByLabel('猝灭率 第 1 行第 4 列', { exact: true })).toHaveValue('0.19');
+  await expect(moduleOf(page).getByLabel('猝灭率 第 1 行第 5 列', { exact: true })).toHaveValue('0.74');
 });
 
-test('batch-specific blanks, free ion labels, paste, explicit invalid cells and no stale chart', async ({ page }) => {
+test('percentage paste, negative responses, explicit invalid cells and no stale chart', async ({ page }) => {
   await demo(page);
-  await moduleOf(page).getByRole('button', { name: '添加空白批次', exact: true }).click();
-  await paste(moduleOf(page).getByLabel('空白与批次 第 2 行第 1 列', { exact: true }), '第二批\t2000\t1000\t1000');
-  await view(page, '原始强度');
-  await moduleOf(page).getByLabel('原始强度 第 1 行第 4 列', { exact: true }).selectOption({ label: '第二批' });
-  await view(page, '猝灭率'); await expect(cell(page, 0, 3)).toContainText('0.8700');
-  await view(page, '空白与批次');
-  await moduleOf(page).getByLabel('空白与批次 第 2 行第 2 列', { exact: true }).fill('0');
-  await expect(moduleOf(page).getByRole('alert')).toContainText('F₀ 必须为有限正数');
-  await expect(page.getByTestId('recognition-scores-chart')).toHaveCount(0);
-  await moduleOf(page).getByLabel('撤销工作表修改', { exact: true }).click();
-  await expect(page.getByTestId('recognition-scores-chart')).toBeVisible();
-  await view(page, '原始强度');
-  await moduleOf(page).getByLabel('原始强度 第 1 行第 5 列', { exact: true }).fill('abc');
-  await expect(cell(page, 0, 4).locator('input')).toHaveAttribute('aria-invalid', 'true');
-  await expect(moduleOf(page).getByRole('alert')).toContainText('F 必须为有限数值');
-  await expect(page.getByTestId('recognition-scores-chart')).toHaveCount(0);
-  await moduleOf(page).getByLabel('原始强度 第 1 行第 5 列', { exact: true }).fill('');
-  await expect(moduleOf(page).getByRole('alert')).toContainText('空值不能按零处理');
-  await moduleOf(page).locator('.recognition-data').screenshot({ path: path.join(evidence, '无效单元格定位-2026.10.27.png') });
+  const m = moduleOf(page), input = m.getByLabel('猝灭率 第 1 行第 4 列', { exact: true });
+  await paste(input, '74%\t19%\t35%\n71%\t21%\t38%\n17%\t76%\t30%\n20%\t72%\t33%\n-21%\t10%\t78%\n-18%\t13%\t75%');
+  await expect(page.getByTestId('recognition-scores-chart').locator('[data-point]')).toHaveCount(6);
+  await chart(page, '响应热图与树状图');
+  const heatmap = page.getByTestId('recognition-heatmap-chart');
+  await expect(heatmap.locator('[data-heat-row="4"][data-probe-id="probe-1"]')).toHaveAttribute('data-value', '-0.21');
+  await input.fill('abc');
+  await expect(cell(page, 0, 3).locator('input')).toHaveAttribute('aria-invalid', 'true');
+  await expect(m.getByRole('alert')).toContainText('猝灭率必须为有限数值');
+  await expect(heatmap).toHaveCount(0);
+  await m.getByLabel('撤销工作表修改', { exact: true }).click();
+  await expect(heatmap).toBeVisible();
+  await input.fill('');
+  await expect(m.getByRole('alert')).toContainText('空值不能按零处理');
+  await expect(heatmap).toHaveCount(0);
+  await m.locator('.recognition-data').screenshot({ path: path.join(evidence, '猝灭率无效单元格-2026.10.28.png') });
 });
 
 test('multi-Sheet regional paste, refresh, independent replicas and read-only result snapshots', async ({ page }) => {
@@ -90,17 +86,15 @@ test('multi-Sheet regional paste, refresh, independent replicas and read-only re
   const oldSpectra = await page.evaluate(() => JSON.parse(localStorage.getItem('perovskite-lab-workspace-v1')!).spectra);
   await moduleOf(page).getByLabel('新建 sheet', { exact: true }).click();
   await expect(moduleOf(page).getByRole('group', { name: '工作表标签' }).getByRole('button', { name: 'Sheet 2', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await view(page, '空白与批次');
-  await paste(moduleOf(page).getByLabel('空白与批次 第 1 行第 1 列', { exact: true }), '批次甲\t1000\t1000\t1000');
-  await view(page, '原始强度');
-  await paste(moduleOf(page).getByLabel('原始强度 第 1 行第 1 列', { exact: true }),
-    'A\tFe³⁺\t1\t批次甲\t260\t810\t650\nA\tFe³⁺\t2\t批次甲\t290\t790\t620\nB\tCO₃²⁻\t1\t批次甲\t830\t240\t700\nB\tCO₃²⁻\t2\t批次甲\t800\t280\t670\nC\tCu²⁺\t1\t批次甲\t1210\t900\t220\nC\tCu²⁺\t2\t批次甲\t1180\t870\t250');
+  await view(page, '猝灭率');
+  await paste(moduleOf(page).getByLabel('猝灭率 第 1 行第 1 列', { exact: true }),
+    'A\tFe³⁺\t1\t0.74\t0.19\t0.35\nA\tFe³⁺\t2\t0.71\t0.21\t0.38\nB\tCO₃²⁻\t1\t0.17\t0.76\t0.30\nB\tCO₃²⁻\t2\t0.20\t0.72\t0.33\nC\tCu²⁺\t1\t-0.21\t0.10\t0.78\nC\tCu²⁺\t2\t-0.18\t0.13\t0.75');
   await expect(page.getByTestId('recognition-scores-chart').locator('[data-point]')).toHaveCount(6);
   await persisted(page); await page.reload();
-  await expect(moduleOf(page).getByLabel('原始强度 第 1 行第 5 列', { exact: true })).toHaveValue('260');
+  await expect(moduleOf(page).getByLabel('猝灭率 第 1 行第 4 列', { exact: true })).toHaveValue('0.74');
   await expect(page.getByTestId('recognition-scores-chart').locator('[data-point]')).toHaveCount(6);
   const coords = await page.getByTestId('recognition-scores-chart').locator('[data-point] title').evaluateAll((els) => els.map((el) => el.textContent!.split('\n').slice(-2)).sort());
-  await moduleOf(page).getByLabel('原始强度 第 1 行第 2 列', { exact: true }).fill('自由输入离子 Al³⁺');
+  await moduleOf(page).getByLabel('猝灭率 第 1 行第 2 列', { exact: true }).fill('自由输入离子 Al³⁺');
   const next = await page.getByTestId('recognition-scores-chart').locator('[data-point] title').evaluateAll((els) => els.map((el) => el.textContent!.split('\n').slice(-2)).sort());
   expect(next).toEqual(coords);
   await expect(page.getByTestId('recognition-scores-chart')).toContainText('自由输入离子 Al³⁺');
@@ -110,12 +104,45 @@ test('multi-Sheet regional paste, refresh, independent replicas and read-only re
   await expect(moduleOf(page)).toContainText('结果快照'); await expect(cell(page, 0, 3)).toContainText(firstScore);
   await expect(cell(page, 0, 3)).toHaveAttribute('aria-readonly', 'true');
   await moduleOf(page).getByRole('button', { name: '返回来源 Sheet', exact: true }).click();
-  await moduleOf(page).getByLabel('原始强度 第 1 行第 5 列', { exact: true }).fill('500');
+  await moduleOf(page).getByLabel('猝灭率 第 1 行第 4 列', { exact: true }).fill('0.5');
   await moduleOf(page).getByRole('group', { name: '工作表标签' }).getByRole('button', { name: /^PCA得分-/ }).click();
   await expect(moduleOf(page)).toContainText('来源数据已改变');
   await expect(cell(page, 0, 3)).toContainText(firstScore);
   await page.waitForTimeout(650);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('perovskite-lab-workspace-v1')!).spectra)).toEqual(oldSpectra);
+});
+
+test('legacy intensity sheets convert once and preserve their original measurements in Excel', async ({ page }, info) => {
+  await demo(page); await persisted(page);
+  await page.evaluate(() => {
+    const w = JSON.parse(localStorage.getItem('perovskite-lab-workspace-v1')!), d = w.recognition;
+    delete d.inputMode;
+    d.batches = [{ id: 'old-batch', name: '旧批次', values: Object.fromEntries(d.probes.map((p: { id: string }) => [p.id, '1000'])) }];
+    const f = [[260, 810, 650], [290, 790, 620], [830, 240, 700], [800, 280, 670], [1210, 900, 220], [1180, 870, 250]];
+    d.rows.forEach((row: { batchId: string; values: Record<string, string> }, i: number) => {
+      row.batchId = 'old-batch';
+      row.values = Object.fromEntries(d.probes.map((p: { id: string }, j: number) => [p.id, String(f[i][j])]));
+    });
+    localStorage.setItem('perovskite-lab-workspace-v1', JSON.stringify(w));
+  });
+  await page.reload();
+  const m = moduleOf(page), input = m.getByLabel('猝灭率 第 1 行第 4 列', { exact: true });
+  await expect(input).toHaveValue('0.74');
+  await expect(m).toContainText('旧强度数据已换算为猝灭率');
+  await expect(page.getByTestId('recognition-scores-chart').locator('[data-point]')).toHaveCount(6);
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('perovskite-lab-workspace-v1')!).recognition.inputMode)).toBe('q');
+  await page.reload(); await expect(input).toHaveValue('0.74');
+  await input.fill('50%');
+  const event = page.waitForEvent('download');
+  await m.getByRole('button', { name: '导出分析 Excel', exact: true }).click();
+  const download = await event, dest = info.outputPath(download.suggestedFilename()); await download.saveAs(dest);
+  const wb = XLSX.read(readFileSync(dest), { type: 'buffer' });
+  const q = XLSX.utils.sheet_to_json<any[]>(wb.Sheets['猝灭率'], { header: 1 });
+  const original = XLSX.utils.sheet_to_json<any[]>(wb.Sheets['历史原始强度'], { header: 1 });
+  const blanks = XLSX.utils.sheet_to_json<any[]>(wb.Sheets['历史空白与批次'], { header: 1 });
+  expect(q[1].slice(3, 5)).toEqual([0.5, 50]);
+  expect(original[1].slice(6)).toEqual([260, 810, 650]);
+  expect(blanks[1].slice(2)).toEqual([1000, 1000, 1000]);
 });
 
 test('Excel and SVG / PNG export match the visible analysis, full precision, Chinese and ion glyphs', async ({ page }, info) => {
@@ -129,7 +156,7 @@ test('Excel and SVG / PNG export match the visible analysis, full precision, Chi
   const excel = await excelEvent, excelPath = path.join(evidence, excel.suggestedFilename()); await excel.saveAs(excelPath);
   expect(excel.suggestedFilename()).toMatch(/v0\.9\.0-\d{4}\.\d{1,2}\.\d{1,2}\.xlsx$/);
   const wb = XLSX.read(readFileSync(excelPath), { type: 'buffer' });
-  expect(wb.SheetNames).toEqual(['原始强度', '空白与批次', '猝灭率', 'PCA得分', 'PCA载荷', '方差解释率', '聚类结果', 'Ward合并', '分析设置']);
+  expect(wb.SheetNames).toEqual(['猝灭率', 'PCA得分', 'PCA载荷', '方差解释率', '聚类结果', 'Ward合并', '分析设置']);
   const q = XLSX.utils.sheet_to_json<any[]>(wb.Sheets['猝灭率'], { header: 1 });
   expect(q[1].slice(3, 5)).toEqual([0.74, 74]); expect(q[5].slice(3, 5)).toEqual([-0.21, -21]);
   const scores = XLSX.utils.sheet_to_json<any[]>(wb.Sheets['PCA得分'], { header: 1 });
@@ -154,7 +181,7 @@ test('Excel and SVG / PNG export match the visible analysis, full precision, Chi
       await expect(root).toContainText('Z-score');
       await moduleOf(page).getByLabel('热图数值', { exact: true }).selectOption('q');
     }
-    await moduleOf(page).locator('.chart-layout').screenshot({ path: path.join(evidence, `${label}-页面-2026.10.27.png`) });
+    await moduleOf(page).locator('.chart-layout').screenshot({ path: path.join(evidence, `${label}-页面-2026.10.28.png`) });
     for (const format of ['SVG', 'PNG']) {
       const event = page.waitForEvent('download');
       await moduleOf(page).locator('.chart-footer').getByRole('button', { name: format, exact: true }).click();
@@ -176,14 +203,14 @@ test('rank one and zero variance are explicit, colors do not change coordinates,
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => window.scrollTo(0, 0));
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
-  await page.screenshot({ path: path.join(evidence, '多探针识别-手机端-2026.10.27.png'), fullPage: true, animations: 'disabled' });
+  await page.screenshot({ path: path.join(evidence, '多探针识别-手机端-2026.10.28.png'), fullPage: true, animations: 'disabled' });
   await page.setViewportSize({ width: 1440, height: 1050 });
   await moduleOf(page).getByLabel('删除探针 3', { exact: true }).click();
-  await paste(moduleOf(page).getByLabel('原始强度 第 1 行第 5 列', { exact: true }), '100\t200\n200\t400\n300\t600\n400\t800\n500\t1000\n600\t1200');
+  await paste(moduleOf(page).getByLabel('猝灭率 第 1 行第 4 列', { exact: true }), '0.1\t0.2\n0.2\t0.4\n0.3\t0.6\n0.4\t0.8\n0.5\t1\n0.6\t1.2');
   await expect(moduleOf(page)).toContainText('仅有 1 个有效主成分');
   await expect(page.getByTestId('recognition-scores-chart')).toHaveCount(0);
   await chart(page, '层次聚类树状图'); await expect(page.getByTestId('recognition-tree-chart')).toBeVisible();
-  await paste(moduleOf(page).getByLabel('原始强度 第 1 行第 5 列', { exact: true }), '100\t200\n100\t400\n100\t600\n100\t800\n100\t1000\n100\t1200');
+  await paste(moduleOf(page).getByLabel('猝灭率 第 1 行第 4 列', { exact: true }), '0.1\t0.2\n0.1\t0.4\n0.1\t0.6\n0.1\t0.8\n0.1\t1\n0.1\t1.2');
   await expect(moduleOf(page).getByRole('alert')).toContainText('零方差');
   await expect(page.getByTestId('recognition-tree-chart')).toHaveCount(0);
 });

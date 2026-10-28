@@ -23,8 +23,11 @@ export interface RecognitionSettings {
 export interface AnalysisTable { name: string; headers: string[]; rows: (string | number | null)[][] }
 export interface RecognitionData {
   schema: 1;
+  /** Missing only on legacy sheets whose values contain F rather than q. */
+  inputMode?: 'q';
   demo: boolean;
   probes: Probe[]; batches: BlankBatch[]; rows: RecognitionRow[];
+  intensitySource?: { probes: Probe[]; batches: BlankBatch[]; rows: RecognitionRow[] };
   settings: RecognitionSettings;
   snapshot?: {
     table: AnalysisTable; sourceSheetId: string; sourceName: string;
@@ -39,9 +42,9 @@ export function defaultRecognition(): RecognitionData {
     ...defaultStyle('spectra'), xLabel, yLabel, points: true, fontFamily: 'Perovskite Lab Sans',
   });
   return {
-    schema: 1, demo: false,
+    schema: 1, inputMode: 'q', demo: false,
     probes: [0, 1, 2].map((i) => ({ id: `probe-${i + 1}`, name: `探针 ${i + 1}`, color: palette[i], selected: true })),
-    batches: [{ id: 'batch-1', name: '批次 1', values: {} }], rows: [],
+    batches: [], rows: [],
     settings: {
       preprocessing: 'zscore', decimals: 4, pcX: 0, pcY: 1,
       cutMode: 'count', clusterCount: 2, cutHeight: '', heatmap: 'q',
@@ -56,15 +59,14 @@ export function defaultRecognition(): RecognitionData {
     },
   };
 }
-/** Explicitly synthetic, fixed measurements; never a source of PCA coordinates. */
+/** Explicitly synthetic, fixed quenching rates; never a source of PCA coordinates. */
 export function demoRecognition(): RecognitionData {
   const d = defaultRecognition();
   d.demo = true;
-  d.batches[0].values = Object.fromEntries(d.probes.map((p) => [p.id, '1000']));
-  const f = [[260, 810, 650], [290, 790, 620], [830, 240, 700], [800, 280, 670], [1210, 900, 220], [1180, 870, 250]];
-  d.rows = f.map((values, i) => ({
+  const q = [[0.74, 0.19, 0.35], [0.71, 0.21, 0.38], [0.17, 0.76, 0.30], [0.20, 0.72, 0.33], [-0.21, 0.10, 0.78], [-0.18, 0.13, 0.75]];
+  d.rows = q.map((values, i) => ({
     id: uid(), sample: `演示-${Math.floor(i / 2) + 1}`, ion: ['Fe³⁺', 'CO₃²⁻', 'Cu²⁺'][Math.floor(i / 2)],
-    replicate: String(i % 2 + 1), batchId: d.batches[0].id,
+    replicate: String(i % 2 + 1), batchId: '',
     values: Object.fromEntries(d.probes.map((p, j) => [p.id, String(values[j])])),
   }));
   return d;
@@ -74,6 +76,13 @@ export const finiteValue = (s: string | undefined): number | null => {
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
 };
+/** Bare numbers are q; an explicit percent sign represents Q (%). */
+export function quenchingValue(s: string | undefined): number | null {
+  if (typeof s !== 'string') return null;
+  const text = s.trim(), percent = /[%％]$/.test(text);
+  const value = finiteValue(percent ? text.slice(0, -1) : text);
+  return value === null ? null : percent ? value / 100 : value;
+}
 export interface CellIssue {
   table: 'raw' | 'blank'; row: number; column: number; reason: string;
   probeId?: string; blocking: boolean;
@@ -82,6 +91,27 @@ export interface Responses { q: (number | null)[][]; issues: CellIssue[] }
 /** Never zip measurements from different rows. All lookups use immutable probe / batch IDs. */
 export function quenching(d: RecognitionData): Responses {
   const issues: CellIssue[] = [];
+  if (d.inputMode === 'q') {
+    const keys = new Set<string>();
+    const q = d.rows.map((row, r) => {
+      [row.sample, row.ion, row.replicate].forEach((v, c) => {
+        if (!v.trim()) issues.push({ table: 'raw', row: r, column: c, blocking: true,
+          reason: `${['样本 ID', '离子种类', '平行编号'][c]}不能为空；请明确同一行的实验对应关系` });
+      });
+      const key = JSON.stringify([row.sample.trim(), row.replicate.trim()]);
+      if (keys.has(key)) issues.push({ table: 'raw', row: r, column: 2, blocking: true,
+        reason: '样本 ID＋平行编号重复，请使用唯一的实验编号' });
+      keys.add(key);
+      return d.probes.map((probe, c) => {
+        const value = quenchingValue(row.values[probe.id]);
+        if (value === null) issues.push({ table: 'raw', row: r, column: c + 3,
+          probeId: probe.id, blocking: probe.selected,
+          reason: `${probe.name}：猝灭率必须为有限数值，可输入 0.74 或 74%；空值不能按零处理` });
+        return value;
+      });
+    });
+    return { q, issues };
+  }
   const invalidBlanks = new Set<string>();
   const batchNames = d.batches.map((b) => b.name.trim());
   batchNames.forEach((name, row) => {
@@ -129,6 +159,17 @@ export function quenching(d: RecognitionData): Responses {
   });
   return { q, issues };
 }
+/** Convert legacy F/F₀ once, retaining an independent copy of every source record. */
+export function asQuenchingInput(d: RecognitionData): RecognitionData {
+  if (d.inputMode === 'q') return d;
+  const { q } = quenching(d);
+  return { ...d, inputMode: 'q', batches: [],
+    intensitySource: structuredClone({ probes: d.probes, batches: d.batches, rows: d.rows }),
+    rows: d.rows.map((row, i) => ({ ...row, batchId: '',
+      values: Object.fromEntries(d.probes.map((p, j) => [p.id, q[i][j] === null ? '' : String(q[i][j])])),
+    })),
+  };
+}
 export interface PreparedMatrix { matrix: number[][]; means: number[]; scales: number[] }
 export function preprocess(matrix: number[][], mode: Preprocessing): PreparedMatrix {
   const n = matrix.length, p = matrix[0]?.length ?? 0;
@@ -139,7 +180,9 @@ export function preprocess(matrix: number[][], mode: Preprocessing): PreparedMat
   const centered = matrix.map((row) => row.map((v, j) => v - means[j]));
   const deviations = means.map((_, j) => Math.hypot(...centered.map((row) => row[j])) / Math.sqrt(n - 1));
   deviations.forEach((sd, j) => {
-    if (sd === 0) throw new Error(`第 ${j + 1} 个所选探针为零方差列，请取消选择或补充有差异的数据`);
+    // Repeated decimal inputs can leave a rounding residual after centering.
+    if (sd === 0 || matrix.every((row) => row[j] === matrix[0][j]))
+      throw new Error(`第 ${j + 1} 个所选探针为零方差列，请取消选择或补充有差异的数据`);
     if (!Number.isFinite(sd)) throw new Error('数值范围过大，无法可靠计算方差');
   });
   const scales = deviations.map((sd) => mode === 'zscore' ? sd : 1);
@@ -311,10 +354,10 @@ export function analyzeRecognition(d: RecognitionData): RecognitionAnalysis {
 }
 /** Numeric provenance only: names, label colors and chart styles cannot alter the calculation. */
 export function recognitionFingerprint(d: RecognitionData): string {
-  return JSON.stringify({ probes: d.probes.map((p) => [p.id, p.selected]),
-    rows: d.rows.map((r) => [r.id, r.batchId, d.probes.map((p) => r.values[p.id] ?? '')]),
-    blanks: d.batches.map((b) => [b.id, d.probes.map((p) => b.values[p.id] ?? '')]),
-    preprocessing: d.settings.preprocessing, cut: [d.settings.cutMode, d.settings.clusterCount, d.settings.cutHeight] });
+  const input = asQuenchingInput(d);
+  return JSON.stringify({ probes: input.probes.map((p) => [p.id, p.selected]),
+    rows: input.rows.map((r) => [r.id, input.probes.map((p) => r.values[p.id] ?? '')]),
+    preprocessing: input.settings.preprocessing, cut: [input.settings.cutMode, input.settings.clusterCount, input.settings.cutHeight] });
 }
 export const ionColor = (d: RecognitionData, ion: string) => d.settings.ionColors[ion]
   ?? palette[Math.max(0, [...new Set(d.rows.map((r) => r.ion))].indexOf(ion)) % palette.length];

@@ -8,7 +8,7 @@ import type {
   WorkbookId,
   WorkbookTab,
 } from './types';
-import { defaultRecognition, type RecognitionData } from './recognition-2026.10.27';
+import { asQuenchingInput, defaultRecognition, type RecognitionData } from './recognition-2026.10.27';
 
 /**
  * Multi-sheet workbook model shared by the analysis table areas.
@@ -34,7 +34,7 @@ export const DEFAULT_SHEET_NAMES: Record<WorkbookId, string> = {
   screening: '分析对象',
   calibration: '校准数据',
   gradient: '梯度配液',
-  recognition: '多探针原始强度',
+  recognition: '多探针猝灭率',
 };
 
 export const MAX_SHEETS = 20;
@@ -338,7 +338,9 @@ function repairWorkbook(
     for (const [id, payload] of Object.entries(existing.store)) {
       // The active payload always lives in the top-level fields; avoid a stale copy.
       if (!ids.has(id) || id === activeId || !payload || typeof payload !== 'object') continue;
-      store[id] = payload;
+      store[id] = page === 'recognition'
+        ? { recognition: asQuenchingInput((payload as RecognitionSheetPayload).recognition ?? defaultRecognition()) }
+        : payload;
     }
   }
   for (const tab of tabs)
@@ -447,7 +449,7 @@ export function ensureWorkbooks<T extends WorkbookHost>(
   }
   return {
     ...w,
-    recognition: w.recognition ?? defaultRecognition(),
+    recognition: asQuenchingInput(w.recognition ?? defaultRecognition()),
     rawSheet: normalizeRawSheet(w.rawSheet, w.calUnit),
     workbooks,
     sheetNames,
@@ -496,7 +498,7 @@ export function applyPayload(
 ): Partial<WorkbookHost> {
   switch (page) {
     case 'recognition':
-      return { recognition: (payload as RecognitionSheetPayload).recognition ?? defaultRecognition() };
+      return { recognition: asQuenchingInput((payload as RecognitionSheetPayload).recognition ?? defaultRecognition()) };
     case 'raw': {
       const raw = payload as RawSheetPayload;
       return {

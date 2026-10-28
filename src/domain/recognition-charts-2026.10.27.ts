@@ -77,7 +77,7 @@ export function hierarchySVG(d: RecognitionData, a: RecognitionAnalysis, style: 
     const indices = probes.map((p) => d.probes.findIndex((all) => all.id === p.id));
     const matrix = d.settings.heatmap === 'q' ? a.q.map((row) => indices.map((j) => row[j]!)) : a.standardized!;
     const limit = Math.max(...matrix.flat().map(Math.abs)) || 1;
-    const metric = d.settings.heatmap === 'q' ? '原始 q = (F₀−F)/F₀' : 'Z-score（样本标准差，ddof=1）';
+    const metric = d.settings.heatmap === 'q' ? '猝灭率 q' : 'Z-score（样本标准差，ddof=1）';
     text(left, top - fs * 2.6, `${metric}；零为色阶中心`, 'start', fs);
     probes.forEach((p, j) => text(left + (j + 0.5) * cellW, top - 12, p.name, 'middle'));
     h.order.forEach((row, i) => {

@@ -36,7 +36,7 @@ const LEGACY_NAMES: Record<WorkbookId, string> = {
   screening: '旧筛选表',
   calibration: '旧校准表',
   gradient: '旧梯度表',
-  recognition: '多探针原始强度',
+  recognition: '多探针猝灭率',
 };
 
 const spectrum = (id: string, name: string): Spectrum => ({
