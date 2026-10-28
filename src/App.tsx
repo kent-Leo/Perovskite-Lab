@@ -1,4 +1,4 @@
-import { APP_VERSION } from './version-v0.9.1-2026.10.27';
+import { APP_VERSION } from './version-v0.9.0-2026.10.27';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity,
@@ -25,10 +25,10 @@ import { Spectra } from './features/Spectra';
 import { Screening } from './features/Screening';
 import { Calibration } from './features/Calibration';
 import { Gradient } from './features/Gradient';
-import { Recognition } from './features/Recognition-v0.9.1-2026.10.27';
-import { AiAssistant } from './features/AiAssistant-v0.9.1-2026.10.27';
+import { Recognition } from './features/Recognition-2026.10.27';
+import { AiAssistant } from './features/AiAssistant-2026.10.25';
 import { ImportDialog } from './components/ImportDialog';
-import { PasteSpectraTable } from './components/PasteSpectraTable-v0.9.1-2026.10.27';
+import { PasteSpectraTable } from './components/PasteSpectraTable-2026.10.18';
 import { ErrorNote } from './components/ui';
 import { dateStamp, downloadBlob, filename } from './services/download';
 import type { ImportKind } from './services/import';

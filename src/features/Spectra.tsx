@@ -12,10 +12,10 @@ import {
   SheetChartGallery,
   type PlotViewMode,
   type SheetGalleryChart,
-} from '../components/SheetPlotPanel-v0.9.1-2026.10.27';
+} from '../components/SheetPlotPanel-v0.5.5-2026.10.22';
 import { ErrorNote, Field, Metric, SectionHead } from '../components/ui';
 import { exportExcel } from '../services/download';
-import { AiSpectraPanel } from '../components/AiSpectraPanel-v0.9.1-2026.10.27';
+import { AiSpectraPanel } from '../components/AiSpectraPanel-2026.10.24';
 
 /** Page-level base title; a custom style.title overrides it. */
 const BASE_TITLE = '荧光光谱';

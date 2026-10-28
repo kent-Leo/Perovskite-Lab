@@ -1,5 +1,5 @@
-import { validateBatchOperation, type BatchEdit, type BatchEditOperation } from '../../shared/ai-chat-v0.9.1-2026.10.27';
-import type { AssistantProcessingResult } from './assistant-processing-v0.9.1-2026.10.27';
+import { validateBatchOperation, type BatchEdit, type BatchEditOperation } from '../../shared/ai-chat-2026.10.25';
+import type { AssistantProcessingResult } from './assistant-processing-2026.10.25';
 
 export interface EditAudit {
   batchId: string; action: 'apply' | 'undo' | 'rebase'; fileId: string; operationIndex: number;

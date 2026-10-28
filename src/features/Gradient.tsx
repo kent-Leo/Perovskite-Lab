@@ -6,8 +6,8 @@ import {
   concentrationGradient, convertConcentrationText, convertConcentration,
   numeric, fmt, units, normalizeConcentrationUnit,
 } from '../domain/math';
-import { WorkspaceWorksheet as Worksheet } from '../components/WorkspaceWorksheet-v0.9.1-2026.10.27';
-import type { WorksheetColumn } from '../domain/worksheet-v0.3.0-2026.10.27';
+import { WorkspaceWorksheet as Worksheet } from '../components/WorkspaceWorksheet-v0.3.1-2026.10.19';
+import type { WorksheetColumn } from '../domain/worksheet-v0.2.0-2026.10.19';
 import { exportExcel } from '../services/download';
 import { ErrorNote, Field, Metric, SectionHead } from '../components/ui';
 export function Gradient() {
