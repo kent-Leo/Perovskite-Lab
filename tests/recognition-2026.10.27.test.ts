@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
-  addProbe, analyzeRecognition, cutHierarchy, defaultRecognition, demoRecognition, moveProbe, pca,
-  preprocess, quenching, recognitionFingerprint, removeProbe, ward,
+  addProbe, analyzeRecognition, asQuenchingInput, cutHierarchy, defaultRecognition, demoRecognition, moveProbe, pca,
+  preprocess, quenching, quenchingValue, recognitionFingerprint, removeProbe, ward,
 } from '../src/domain/recognition-2026.10.27';
 import { hierarchySVG, responseColor } from '../src/domain/recognition-charts-2026.10.27';
 import { recognitionTables } from '../src/services/recognition-export-2026.10.27';
@@ -17,16 +17,29 @@ const closeMatrix = (a: number[][], b: number[][], digits = 10) => {
   a.forEach((row, i) => { expect(row.length).toBe(b[i].length); row.forEach((x, j) => expect(x).toBeCloseTo(b[i][j], digits)); });
 };
 
+// Pre-change persisted format: F values with per-batch F₀.
+function legacyDemo() {
+  const d = demoRecognition();
+  delete d.inputMode;
+  d.batches = [{ id: 'batch-1', name: '批次 1', values: Object.fromEntries(d.probes.map((p) => [p.id, '1000'])) }];
+  const f = [[260, 810, 650], [290, 790, 620], [830, 240, 700], [800, 280, 670], [1210, 900, 220], [1180, 870, 250]];
+  d.rows.forEach((row, i) => {
+    row.batchId = 'batch-1';
+    row.values = Object.fromEntries(d.probes.map((p, j) => [p.id, String(f[i][j])]));
+  });
+  return d;
+}
+
 describe('quenching, stable IDs and complete experimental rows', () => {
   it('retains raw F, positive quenching, percentage and negative enhancement', () => {
-    const d = demoRecognition(), q = quenching(d).q;
+    const d = legacyDemo(), q = quenching(d).q;
     expect(q[0][0]).toBe(0.74); expect(q[0][0]! * 100).toBe(74);
     expect(q[4][0]).toBe(-0.21); expect(q[4][0]! * 100).toBe(-21);
     expect(d.rows[0].values[d.probes[0].id]).toBe('260');
     expect(d.rows[4].values[d.probes[0].id]).toBe('1210');
   });
   it.each(['', 'oops', 'Infinity', 'NaN'])('locates invalid F=%s without replacing it', (value) => {
-    const d = demoRecognition(), id = d.probes[1].id;
+    const d = legacyDemo(), id = d.probes[1].id;
     d.rows[2].values[id] = value;
     const a = analyzeRecognition(d);
     expect(a.issues).toContainEqual(expect.objectContaining({ table: 'raw', row: 2, column: 5, probeId: id, blocking: true }));
@@ -34,14 +47,14 @@ describe('quenching, stable IDs and complete experimental rows', () => {
     expect(d.rows[2].values[id]).toBe(value);
   });
   it.each(['', 'oops', '0', '-1', 'Infinity'])('locates invalid F₀=%s', (value) => {
-    const d = demoRecognition(), id = d.probes[0].id;
+    const d = legacyDemo(), id = d.probes[0].id;
     d.batches[0].values[id] = value;
     const a = analyzeRecognition(d);
     expect(a.issues).toContainEqual(expect.objectContaining({ table: 'blank', row: 0, column: 1, blocking: true }));
     expect(a.q[0][0]).toBeNull(); expect(a.pca).toBeUndefined();
   });
   it('keeps measurements and blanks aligned through insert / rename / reorder / delete', () => {
-    const original = demoRecognition(), ids = original.probes.map((p) => p.id);
+    const original = legacyDemo(), ids = original.probes.map((p) => p.id);
     let d = addProbe(original, 1);
     const newId = d.probes[1].id;
     expect(d.rows[0].values[newId]).toBeUndefined();
@@ -59,7 +72,7 @@ describe('quenching, stable IDs and complete experimental rows', () => {
     expect(original.rows[0].values[ids[0]]).toBe('260');
   });
   it('uses the explicitly associated batch and recalculates when F or F₀ changes', () => {
-    const d = demoRecognition(), id = d.probes[0].id;
+    const d = legacyDemo(), id = d.probes[0].id;
     d.batches.push({ id: 'second', name: '第二批次', values: { ...d.batches[0].values, [id]: '2000' } });
     d.rows[0].batchId = 'second';
     expect(quenching(d).q[0][0]).toBe(0.87);
@@ -71,17 +84,17 @@ describe('quenching, stable IDs and complete experimental rows', () => {
     expect(quenching(d).q[0][0]).toBe(0.6);
   });
   it('never joins separate incomplete rows or silently drops a replicate', () => {
-    const d = demoRecognition();
+    const d = legacyDemo();
     delete d.rows[0].values[d.probes[0].id]; delete d.rows[1].values[d.probes[1].id];
     expect(analyzeRecognition(d).pca).toBeUndefined(); expect(d.rows).toHaveLength(6);
-    const valid = demoRecognition(), before = analyzeRecognition(valid);
+    const valid = legacyDemo(), before = analyzeRecognition(valid);
     valid.rows.forEach((r, i) => { r.ion = `arbitrary-ion-${i}`; r.sample = `sample-${i}`; r.replicate = `R${i}`; });
     const after = analyzeRecognition(valid);
     expect(after.pca).toEqual(before.pca); expect(after.hierarchy).toEqual(before.hierarchy);
     expect(after.pca!.scores).toHaveLength(6);
   });
   it('requires explicit sample / replicate / batch associations', () => {
-    const d = demoRecognition();
+    const d = legacyDemo();
     d.rows[0].replicate = ''; d.rows[1].batchId = 'missing';
     expect(analyzeRecognition(d).issues).toEqual(expect.arrayContaining([
       expect.objectContaining({ row: 0, column: 2, blocking: true }),
@@ -91,7 +104,7 @@ describe('quenching, stable IDs and complete experimental rows', () => {
     expect(analyzeRecognition(d).issues.some((issue) => issue.reason.includes('重复'))).toBe(true);
   });
   it('excludes an explicitly unselected probe without filling its missing readings', () => {
-    let d = addProbe(demoRecognition());
+    let d = addProbe(legacyDemo());
     expect(analyzeRecognition(d).pca).toBeUndefined();
     d.probes.at(-1)!.selected = false;
     const a = analyzeRecognition(d);
@@ -100,10 +113,95 @@ describe('quenching, stable IDs and complete experimental rows', () => {
     expect(a.pca!.scores).toHaveLength(6);
   });
   it('rejects ambiguous batch names at the exact name cell', () => {
-    const d = demoRecognition(); d.batches.push({ ...d.batches[0], id: 'another' });
+    const d = legacyDemo(); d.batches.push({ ...d.batches[0], id: 'another' });
     const a = analyzeRecognition(d);
     expect(a.pca).toBeUndefined();
     expect(a.issues).toContainEqual(expect.objectContaining({ table: 'blank', row: 1, column: 0, blocking: true }));
+  });
+});
+
+describe('direct quenching input and legacy conversion', () => {
+  it.each([
+    ['0.74', 0.74], ['74%', 0.74], [' 74 ％ ', 0.74], ['-21%', -0.21], ['0', 0],
+    ['1e-2', 0.01], ['-0.21', -0.21], ['', null], ['%', null], ['abc', null],
+    ['Infinity', null], ['NaN', null], ['74%%', null],
+  ])('parses %s with an explicit percent convention', (text, expected) => {
+    expect(quenchingValue(text as string)).toBe(expected);
+  });
+  it('analyzes q directly without any blank or batch and matches the independent reference', () => {
+    const d = demoRecognition();
+    d.settings.preprocessing = 'center';
+    expect(d.batches).toEqual([]);
+    expect(d.rows[0].values[d.probes[0].id]).toBe('0.74');
+    const a = analyzeRecognition(d);
+    expect(a.errors).toEqual([]); expect(a.issues).toEqual([]);
+    closeMatrix(a.q as number[][], ref.q);
+    a.pca!.explained.forEach((value, i) => expect(value).toBeCloseTo(ref.center.explained[i], 10));
+    closeMatrix(a.hierarchy!.merges.map((m) => [m.left, m.right, m.height, m.size]), ref.center.linkage);
+    const before = a.pca;
+    d.rows.forEach((row) => d.probes.forEach((p) => { row.values[p.id] = `${Number(row.values[p.id]) * 100}%`; }));
+    closeMatrix(analyzeRecognition(d).pca!.scores, before!.scores);
+  });
+  it.each(['', 'abc', 'Infinity', 'NaN', '74%%'])('locates invalid q=%s and clears all derived results', (value) => {
+    const d = demoRecognition(), id = d.probes[1].id;
+    d.rows[2].values[id] = value;
+    const a = analyzeRecognition(d);
+    expect(a.issues).toContainEqual(expect.objectContaining({ table: 'raw', row: 2, column: 4, probeId: id, blocking: true }));
+    expect(a.q[2][1]).toBeNull(); expect(a.pca).toBeUndefined(); expect(a.hierarchy).toBeUndefined();
+    expect(d.rows[2].values[id]).toBe(value);
+  });
+  it.each(['0.1', '10%', '0', '-21%'])('rejects a constant decimal or percentage column (%s)', (value) => {
+    const d = demoRecognition(), id = d.probes[0].id;
+    d.rows.forEach((row) => { row.values[id] = value; });
+    const a = analyzeRecognition(d);
+    expect(a.errors.join()).toContain('零方差');
+    expect(a.pca).toBeUndefined(); expect(a.hierarchy).toBeUndefined();
+  });
+  it('ignores historical F and F₀ after conversion and exports a separate untouched source', () => {
+    const old = legacyDemo(), original = structuredClone(old);
+    const d = asQuenchingInput(old);
+    expect(d.inputMode).toBe('q'); expect(d.batches).toEqual([]);
+    expect(d.intensitySource).toEqual({ probes: original.probes, batches: original.batches, rows: original.rows });
+    expect(old).toEqual(original); expect(asQuenchingInput(d)).toBe(d);
+    expect(recognitionFingerprint(d)).toBe(recognitionFingerprint(old));
+    const a = analyzeRecognition(d);
+    expect(a.pca).toEqual(analyzeRecognition(old).pca);
+    const modifiedArchive = structuredClone(d);
+    modifiedArchive.intensitySource!.rows[0].values[d.probes[0].id] = '9999';
+    modifiedArchive.intensitySource!.batches[0].values[d.probes[0].id] = '0';
+    expect(analyzeRecognition(modifiedArchive).pca).toEqual(a.pca);
+    expect(old).toEqual(original);
+    d.rows[0].values[d.probes[0].id] = '50%';
+    expect(quenching(d).q[0][0]).toBe(0.5);
+    expect(recognitionFingerprint(d)).not.toBe(recognitionFingerprint(old));
+    const tables = recognitionTables(d, analyzeRecognition(d));
+    expect(tables.find((t) => t.name === '历史原始强度')!.rows[0].slice(6)).toEqual([260, 810, 650]);
+    expect(tables.find((t) => t.name === '猝灭率')!.rows[0].slice(3, 5)).toEqual([0.5, 50]);
+  });
+  it('preserves invalid legacy values in the source without inventing a rate', () => {
+    const old = legacyDemo(), id = old.probes[0].id;
+    old.batches[0].values[id] = '0';
+    const d = asQuenchingInput(old);
+    expect(d.rows[0].values[id]).toBe('');
+    expect(d.intensitySource!.batches[0].values[id]).toBe('0');
+    expect(analyzeRecognition(d).pca).toBeUndefined();
+  });
+  it('migrates active and inactive sheets, preserves saved tables and does not convert q twice', () => {
+    const old = legacyDemo(), w = ensureWorkbooks(blankWorkspace());
+    const table = recognitionTables(old, analyzeRecognition(old)).find((t) => t.name === 'PCA得分')!;
+    w.recognition = { ...structuredClone(old), snapshot: { table, sourceSheetId: 'source', sourceName: '旧来源',
+      sourceFingerprint: 'legacy-fingerprint', capturedAt: '2026.10.27' } };
+    w.workbooks.recognition.tabs.push({ id: 'source', name: '旧来源' });
+    w.workbooks.recognition.store.source = { recognition: old };
+    const restored = ensureWorkbooks(JSON.parse(JSON.stringify(w)));
+    expect(restored.recognition.inputMode).toBe('q');
+    expect(restored.recognition.snapshot!.table).toEqual(table);
+    const source = restored.workbooks.recognition.store.source as { recognition: typeof old };
+    expect(source.recognition.inputMode).toBe('q');
+    expect(source.recognition.intensitySource!.rows).toEqual(old.rows);
+    expect(recognitionFingerprint(source.recognition)).toBe(recognitionFingerprint(restored.recognition));
+    expect(ensureWorkbooks(restored).recognition).toBe(restored.recognition);
+    expect(restored.spectra).toEqual(w.spectra);
   });
 });
 
@@ -148,7 +246,7 @@ describe('independent NumPy SVD and SciPy Ward reference', () => {
 describe('shared results, charts, persistence and old workbook compatibility', () => {
   it('keeps precision and metadata consistent in all exported result tables', () => {
     const d = demoRecognition(), a = analyzeRecognition(d), tables = recognitionTables(d, a);
-    expect(tables.map((t) => t.name)).toEqual(['原始强度', '空白与批次', '猝灭率', 'PCA得分', 'PCA载荷', '方差解释率', '聚类结果', 'Ward合并', '分析设置']);
+    expect(tables.map((t) => t.name)).toEqual(['猝灭率', 'PCA得分', 'PCA载荷', '方差解释率', '聚类结果', 'Ward合并', '分析设置']);
     const q = tables.find((t) => t.name === '猝灭率')!;
     expect(q.rows[0].slice(3, 5)).toEqual([0.74, 74]); expect(q.rows[4].slice(3, 5)).toEqual([-0.21, -21]);
     expect(tables.find((t) => t.name === 'PCA得分')!.rows[0].slice(3)).toEqual(a.pca!.scores[0]);
@@ -193,7 +291,7 @@ describe('shared results, charts, persistence and old workbook compatibility', (
     expect(w.recognition!.rows).toEqual([]);
     w = ensureWorkbooks({ ...w, ...switchSheet(w, 'recognition', source) });
     expect(w.recognition).toEqual(d);
-    const table = recognitionTables(d, analyzeRecognition(d))[3];
+    const table = recognitionTables(d, analyzeRecognition(d)).find((t) => t.name === 'PCA得分')!;
     w = ensureWorkbooks({ ...w, ...createSheetWithPayload(w, 'recognition', '结果-2026.10.27', { recognition: { ...d,
       snapshot: { table, sourceSheetId: source, sourceName: '来源', sourceFingerprint: recognitionFingerprint(d), capturedAt: '2026.10.27' } } }) });
     const restored = ensureWorkbooks(JSON.parse(JSON.stringify(w)));

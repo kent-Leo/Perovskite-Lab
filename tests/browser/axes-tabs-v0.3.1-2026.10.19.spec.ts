@@ -30,7 +30,7 @@ test('all four sheet names commit with Enter or blur, survive navigation/reload,
   await page.waitForTimeout(650);
   await page.reload();
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('perovskite-lab-workspace-v1')!));
-  expect(stored.sheetNames).toEqual({ raw: '实验表 1', screening: '实验表 2', calibration: '实验表 3', gradient: '实验表 4', recognition: '多探针原始强度' });
+  expect(stored.sheetNames).toEqual({ raw: '实验表 1', screening: '实验表 2', calibration: '实验表 3', gradient: '实验表 4', recognition: '多探针猝灭率' });
   expect(stored.spectra).toHaveLength(6);
   expect(stored.objects).toHaveLength(6);
   expect(stored.calibration).toHaveLength(6);

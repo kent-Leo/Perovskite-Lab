@@ -11,11 +11,6 @@ export function recognitionTables(d: RecognitionData, a: RecognitionAnalysis): A
   const pcX = d.settings.pcX < rank ? d.settings.pcX : 0;
   const pcY = d.settings.pcY < rank && d.settings.pcY !== pcX ? d.settings.pcY : pcX === 0 ? 1 : 0;
   const tables: AnalysisTable[] = [
-    { name: '原始强度', headers: [...meta, '空白批次', '批次 ID', '实验行 ID', ...d.probes.map((p) => `${p.name} F`)],
-      rows: d.rows.map((row, i) => [...metadata(i), d.batches.find((b) => b.id === row.batchId)?.name ?? '', row.batchId, row.id,
-        ...d.probes.map((p) => finiteValue(row.values[p.id]) ?? row.values[p.id] ?? '')]) },
-    { name: '空白与批次', headers: ['批次', '批次 ID', ...d.probes.map((p) => `${p.name} F₀`)],
-      rows: d.batches.map((batch) => [batch.name, batch.id, ...d.probes.map((p) => finiteValue(batch.values[p.id]) ?? batch.values[p.id] ?? '')]) },
     { name: '猝灭率', headers: [...meta, ...d.probes.flatMap((p) => [`${p.name} q`, `${p.name} Q (%)`])],
       rows: a.q.map((row, i) => [...metadata(i), ...row.flatMap((q) => [q, q === null ? null : q * 100])]) },
     { name: 'PCA得分', headers: [...meta, ...pcs], rows: a.pca?.scores.map((row, i) => [...metadata(i), ...row]) ?? [] },
@@ -26,8 +21,21 @@ export function recognitionTables(d: RecognitionData, a: RecognitionAnalysis): A
     { name: 'Ward合并', headers: ['新节点 (0-based)', '左节点', '右节点', 'Ward距离', '样本数'],
       rows: a.hierarchy?.merges.map((m, i) => [d.rows.length + i, m.left, m.right, m.height, m.size]) ?? [] },
   ];
+  if (d.intensitySource) {
+    const source = d.intensitySource;
+    tables.push(
+      { name: '历史原始强度', headers: [...meta, '空白批次', '批次 ID', '实验行 ID', ...source.probes.map((p) => `${p.name} F`)],
+        rows: source.rows.map((row) => [row.sample, row.ion, row.replicate,
+          source.batches.find((b) => b.id === row.batchId)?.name ?? '', row.batchId, row.id,
+          ...source.probes.map((p) => finiteValue(row.values[p.id]) ?? row.values[p.id] ?? '')]) },
+      { name: '历史空白与批次', headers: ['批次', '批次 ID', ...source.probes.map((p) => `${p.name} F₀`)],
+        rows: source.batches.map((batch) => [batch.name, batch.id,
+          ...source.probes.map((p) => finiteValue(batch.values[p.id]) ?? batch.values[p.id] ?? '')]) },
+    );
+  }
   tables.push({ name: '分析设置', headers: ['设置', '值'], rows: [
     ['软件版本', `v${APP_VERSION}`], ['导出日期', dateStamp()], ['数据来源', d.demo ? '演示数据（人工生成）' : '用户录入'],
+    ['输入方式', d.inputMode === 'q' ? '直接录入猝灭率 q；带 % 的数值除以 100' : '历史强度换算'],
     ['响应公式', 'q=(F₀−F)/F₀; Q=q×100%'], ['预处理', preprocessingLabel(d.settings.preprocessing)],
     ['Z-score标准差', '样本标准差 ddof=1'], ['聚类输入', '完整所选探针响应矩阵，与 PCA 采用相同预处理'],
     ['距离', '欧氏距离'], ['连接方法', 'Ward'], ['平行实验', '每行独立保留；不求平均'],

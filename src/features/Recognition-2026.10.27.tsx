@@ -19,14 +19,14 @@ import { recognitionExcel, recognitionTables } from '../services/recognition-exp
 import { dateStamp } from '../services/download';
 import './Recognition-2026.10.27.css';
 
-const tableNames = ['原始强度', '空白与批次', '猝灭率', 'PCA得分', 'PCA载荷', '方差解释率', '聚类结果', '分析设置'];
+const tableNames = ['猝灭率', 'PCA得分', 'PCA载荷', '方差解释率', '聚类结果', '分析设置'];
 const chartNames: Record<RecognitionChart, string> = { scores: 'PCA 得分图', loadings: 'PCA 载荷图', tree: '层次聚类树状图', heatmap: '响应热图与树状图' };
 const clone = (d: RecognitionData) => structuredClone(d);
 
 export function Recognition() {
   const { w, update, notify } = useWorkspace(), wb = useWorkbook('recognition');
   const d = w.recognition ?? defaultRecognition(), s = d.settings;
-  const [view, setView] = useState('原始强度'), [chart, setChart] = useState<RecognitionChart>('scores');
+  const [view, setView] = useState('猝灭率'), [chart, setChart] = useState<RecognitionChart>('scores');
   const [busy, setBusy] = useState(false);
   const tableRoot = useRef<HTMLDivElement>(null);
   const history = useRef(new Map<string, { past: RecognitionData[]; future: RecognitionData[] }>());
@@ -55,7 +55,7 @@ export function Recognition() {
   const tables = recognitionTables(d, a);
   const currentTable = d.snapshot?.table ?? tables.find((table) => table.name === view) ?? tables[0];
   const snapshot = d.snapshot;
-  const editable = !snapshot && (view === '原始强度' || view === '空白与批次');
+  const editable = !snapshot && view === '猝灭率';
   const ready = !a.errors.length && !!a.pca && !!a.clusters;
   const rank = a.pca?.rank ?? 0;
   // Always show distinct, actually available axes after data/rank changes.
@@ -72,43 +72,32 @@ export function Recognition() {
   };
   const insertRow = (at: number) => {
     const rows = [...d.rows];
-    rows.splice(Math.min(at, rows.length), 0, { id: uid(), sample: '', ion: '', replicate: '', batchId: d.batches[0]?.id ?? '', values: {} });
+    rows.splice(Math.min(at, rows.length), 0, { id: uid(), sample: '', ion: '', replicate: '', batchId: '', values: {} });
     change({ ...d, rows });
   };
   const jump = (issue: CellIssue) => {
-    setView(issue.table === 'raw' ? '原始强度' : '空白与批次');
+    setView('猝灭率');
     requestAnimationFrame(() => {
       const cell = tableRoot.current?.querySelector<HTMLElement>(`[data-cell="${issue.row}:${issue.column}"]`);
       cell?.scrollIntoView({ block: 'center', inline: 'nearest' });
       (cell?.querySelector<HTMLElement>('input,select') ?? cell)?.focus();
     });
   };
-  const rawColumns: WorksheetColumn[] = [
+  const inputColumns: WorksheetColumn[] = [
     { key: 'sample', title: '样本 ID', designation: 'Label' },
     { key: 'ion', title: '离子种类', designation: 'Label', comment: '自由输入，如 Fe³⁺、CO₃²⁻' },
     { key: 'replicate', title: '平行编号', designation: 'Meta' },
-    { key: 'batch', title: '空白批次', type: 'select', options: d.batches.map((b) => ({ value: b.id, label: b.name })) },
-    ...d.probes.map((p): WorksheetColumn => ({ key: p.id, title: p.name, color: p.color, designation: 'Y', unit: 'a.u.', comment: '测定强度 F；同一行须来自同一次实验' })),
+    ...d.probes.map((p): WorksheetColumn => ({ key: p.id, title: p.name, color: p.color, designation: 'Y', unit: 'q', comment: '猝灭率：0.74 或 74%；同一行须来自同一次实验' })),
     { key: 'delete', title: '删除行', readOnly: true },
   ];
-  const blankColumns: WorksheetColumn[] = [
-    { key: 'batch-name', title: '批次名称', designation: 'Label' },
-    ...d.probes.map((p): WorksheetColumn => ({ key: p.id, title: p.name, color: p.color, unit: 'a.u.', comment: 'F₀：有限正数' })),
-    { key: 'delete', title: '删除批次', readOnly: true },
-  ];
-  const columns = editable ? (view === '原始强度' ? rawColumns : blankColumns).map((column): WorksheetColumn => ({ ...column, headerFields: d.probes.some((p) => p.id === column.key) ? ['title'] : [] }))
+  const columns = editable ? inputColumns.map((column): WorksheetColumn => ({ ...column, headerFields: d.probes.some((p) => p.id === column.key) ? ['title'] : [] }))
     : currentTable.headers.map((title, i): WorksheetColumn => ({ key: `result-${i}`, title, readOnly: true }));
-  const rows = editable ? view === '原始强度'
-    ? d.rows.map((r) => [r.sample, r.ion, r.replicate, r.batchId, ...d.probes.map((p) => r.values[p.id] ?? ''), ''])
-    : d.batches.map((b) => [b.name, ...d.probes.map((p) => b.values[p.id] ?? ''), ''])
+  const rows = editable ? d.rows.map((r) => [r.sample, r.ion, r.replicate, ...d.probes.map((p) => r.values[p.id] ?? ''), ''])
     : currentTable.rows.map((row) => row.map(display));
   const tableChange = (values: string[][]) => {
-    if (view === '原始强度') change({ ...d, rows: values.map((r, i) => ({
-      id: d.rows[i]?.id ?? uid(), sample: r[0] ?? '', ion: r[1] ?? '', replicate: r[2] ?? '', batchId: r[3] ?? '',
-      values: Object.fromEntries(d.probes.map((p, j) => [p.id, r[j + 4] ?? ''])),
-    })) });
-    else change({ ...d, batches: values.map((r, i) => ({ id: d.batches[i]?.id ?? uid(), name: r[0] ?? '',
-      values: Object.fromEntries(d.probes.map((p, j) => [p.id, r[j + 1] ?? ''])),
+    change({ ...d, rows: values.map((r, i) => ({
+      id: d.rows[i]?.id ?? uid(), sample: r[0] ?? '', ion: r[1] ?? '', replicate: r[2] ?? '', batchId: '',
+      values: Object.fromEntries(d.probes.map((p, j) => [p.id, r[j + 3] ?? ''])),
     })) });
   };
   const saveResult = () => {
@@ -124,7 +113,7 @@ export function Recognition() {
   };
   const source = snapshot && wb.snapshots.find((item) => item.tab.id === snapshot.sourceSheetId);
   const sourceData = source && (source.payload as RecognitionSheetPayload).recognition;
-  const staleSnapshot = snapshot && (!sourceData || recognitionFingerprint(sourceData) !== snapshot.sourceFingerprint);
+  const staleSnapshot = snapshot && (!sourceData || recognitionFingerprint(sourceData) !== recognitionFingerprint(d));
   const ids = [...new Set(d.rows.map((r) => r.ion).filter(Boolean))];
   const plot: PlotData = { series: [] };
   if (ready && rank >= 2 && (chart === 'scores' || chart === 'loadings')) {
@@ -149,24 +138,25 @@ export function Recognition() {
   const setStyle = (patch: Partial<ChartStyle>) => settings({ styles: { ...s.styles, [chart]: { ...baseStyle, ...patch } } });
   const resetDemo = () => {
     if (d.rows.length && !window.confirm('用演示数据替换当前多探针 Sheet？可通过撤销恢复。')) return;
-    change(demoRecognition()); setView('原始强度');
+    change(demoRecognition()); setView('猝灭率');
   };
   return <div className="recognition" data-testid="recognition-module">
     <section className="panel recognition-intro">
-      <SectionHead title="从多探针响应识别样本" detail="每行录入同一样本、同一次平行实验的全部探针 F。离子标签仅用于展示；平行实验分别保留。"
+      <SectionHead title="从多探针猝灭率识别样本" detail="每行录入同一样本、同一次平行实验的全部探针猝灭率。离子标签仅用于展示；平行实验分别保留。"
         action={<div className="recognition-actions"><button onClick={resetDemo} disabled={!!snapshot}>载入演示数据</button>
           <button disabled={!ready || !!snapshot || busy} onClick={async () => {
             setBusy(true); try { await recognitionExcel(d, a); notify('完整分析工作簿已导出'); }
             catch (e) { notify((e as Error).message); } finally { setBusy(false); }
           }}><Download size={15} />{busy ? '导出中…' : '导出分析 Excel'}</button></div>} />
       {d.demo && <p className="recognition-demo">演示数据 · 人工生成，仅用于验证操作流程。</p>}
-      <p className="muted">q = (F₀−F)/F₀；Q = q × 100%。负值表示荧光增强。原始强度独立保存，结果表只读。</p>
+      <p className="muted">直接输入 q（如 0.74）或百分数（如 74%）；Q = q × 100%。负值表示荧光增强，0 表示无变化。</p>
+      {d.intensitySource && <p className="muted">旧强度数据已换算为猝灭率；原始强度与空白批次已保留，可随分析 Excel 一并导出。</p>}
       {snapshot ? <div className="recognition-snapshot" role="status">
         结果快照 · {snapshot.capturedAt} · 来源：{snapshot.sourceName}。快照保留保存时的数据。
         {staleSnapshot && <strong> 来源数据已改变或已删除，请返回原始 Sheet 重新分析。</strong>}
-        {source && <button onClick={() => { wb.select(source.tab.id); setView('原始强度'); }}>返回来源 Sheet</button>}
+        {source && <button onClick={() => { wb.select(source.tab.id); setView('猝灭率'); }}>返回来源 Sheet</button>}
       </div> : <details className="recognition-manage" open>
-        <summary>探针管理与空白批次</summary>
+        <summary>探针管理</summary>
         <div className="recognition-probes">
           {d.probes.map((probe, i) => <div className="recognition-probe" key={probe.id}>
             <input type="checkbox" aria-label={`选择探针 ${i + 1}`} checked={probe.selected} onChange={(e) => modifyProbe(probe.id, { selected: e.target.checked })} />
@@ -178,12 +168,7 @@ export function Recognition() {
           </div>)}
         </div>
         <div className="recognition-actions"><button onClick={() => insertProbe()}><Plus size={14} />添加探针</button>
-          <button onClick={() => {
-            let number = 1;
-            while (d.batches.some((b) => b.name === `批次 ${number}`)) number++;
-            change({ ...d, batches: [...d.batches, { id: uid(), name: `批次 ${number}`, values: {} }] }); setView('空白与批次');
-          }}>添加空白批次</button>
-          <span className="muted">已选 {a.selected.length} 个探针；在「空白与批次」表分别填写 F₀，在每行选择批次。</span></div>
+          <span className="muted">已选 {a.selected.length} 个探针；在「猝灭率」表填写各探针 q。</span></div>
       </details>}
     </section>
     {!snapshot && <section className="panel recognition-options">
@@ -200,43 +185,41 @@ export function Recognition() {
       <p className="muted">{preprocessingLabel(s.preprocessing)}。聚类固定采用欧氏距离＋Ward 法，基于全部所选探针，使用与 PCA 相同的预处理。单 Sheet 上限：{RECOGNITION_LIMITS.samples} 行、{RECOGNITION_LIMITS.probes} 个探针。</p>
     </section>}
     <section className="panel recognition-data">
-      <SectionHead title={snapshot ? '已保存的结果 Sheet' : '识别分析工作表'} action={!snapshot && <button disabled={!ready || !wb.canCreate || view === '原始强度' || view === '空白与批次'} onClick={saveResult}><Save size={14} />保存当前结果到新 Sheet</button>} />
+      <SectionHead title={snapshot ? '已保存的结果 Sheet' : '识别分析工作表'} action={!snapshot && <button disabled={!ready || !wb.canCreate || editable} onClick={saveResult}><Save size={14} />保存当前结果到新 Sheet</button>} />
       {!snapshot && <div className="recognition-tabs" role="group" aria-label="分析数据视图">{tableNames.map((name) => <button key={name} className={view === name ? 'selected' : ''} aria-pressed={view === name} onClick={() => setView(name)}>{name}</button>)}</div>}
       <div ref={tableRoot}>
         <Worksheet key={`${wb.activeId}/${snapshot ? 'snapshot' : view}`} book="多探针识别分析" sheet={wb.activeName}
-          sheetTabs={wb.tabs} activeSheetId={wb.activeId} onSelectSheet={wb.select} onCreateSheet={() => { wb.create(); setView('原始强度'); }} onDeleteSheet={wb.remove} onRenameSheet={wb.rename}
-          columns={columns} rows={rows} minRows={Math.max(1, rows.length)} allowAddRows={editable && view === '原始强度'}
+          sheetTabs={wb.tabs} activeSheetId={wb.activeId} onSelectSheet={wb.select} onCreateSheet={() => { wb.create(); setView('猝灭率'); }} onDeleteSheet={wb.remove} onRenameSheet={wb.rename}
+          columns={columns} rows={rows} minRows={Math.max(1, rows.length)} allowAddRows={editable}
           externalHistory={editable ? externalHistory : undefined}
           onChange={editable ? tableChange : undefined}
-          onInsertRow={editable && view === '原始强度' ? insertRow : undefined}
+          onInsertRow={editable ? insertRow : undefined}
           onAddColumn={editable ? () => insertProbe() : undefined}
-          onInsertColumn={editable ? (c) => insertProbe(Math.max(0, c - (view === '原始强度' ? 4 : 1))) : undefined}
-          onMoveRow={editable && view === '原始强度' ? (from, to) => {
+          onInsertColumn={editable ? (c) => insertProbe(Math.max(0, c - 3)) : undefined}
+          onMoveRow={editable ? (from, to) => {
             const next = [...d.rows]; next.splice(to, 0, next.splice(from, 1)[0]); change({ ...d, rows: next });
           } : undefined}
           onMetadataChange={editable ? (c, field, value) => {
-            const p = d.probes[c - (view === '原始强度' ? 4 : 1)];
+            const p = d.probes[c - 3];
             if (p && field === 'title') modifyProbe(p.id, { name: value });
           } : undefined}
           cellLabel={(r, c) => `${snapshot ? currentTable.name : view} 第 ${r + 1} 行第 ${c + 1} 列`}
-          invalidCell={(r, c) => editable && a.issues.some((issue) => issue.table === (view === '原始强度' ? 'raw' : 'blank') && issue.row === r && issue.column === c)}
+          invalidCell={(r, c) => editable && a.issues.some((issue) => issue.table === 'raw' && issue.row === r && issue.column === c)}
           renderCell={editable ? (r, c) => {
             if (c !== columns.length - 1) return undefined;
-            const row = view === '原始强度' ? d.rows[r] : d.batches[r];
+            const row = d.rows[r];
             if (!row) return undefined;
-            return <button aria-label={`删除${view === '原始强度' ? '实验行' : '空白批次'} ${r + 1}`} onClick={() => {
-              if (view === '原始强度') change({ ...d, rows: d.rows.filter((_, i) => i !== r) });
-              else if (d.rows.some((sample) => sample.batchId === row.id)) notify('该空白批次仍被实验行使用，请先在原始强度表重新选择批次');
-              else change({ ...d, batches: d.batches.filter((_, i) => i !== r) });
+            return <button aria-label={`删除实验行 ${r + 1}`} onClick={() => {
+              change({ ...d, rows: d.rows.filter((_, i) => i !== r) });
             }}><Trash2 size={14} /></button>;
           } : undefined} />
       </div>
-      {!snapshot && editable && <p className="muted">可从 Excel 粘贴完整区域。原始强度表按「样本 ID、离子种类、平行编号、批次名称、各探针 F」排列；每行必须来自匹配的同一次实验。撤销 / 重做同时支持数值与探针结构修改。</p>}
+      {!snapshot && editable && <p className="muted">可从 Excel 粘贴完整区域，按「样本 ID、离子种类、平行编号、各探针猝灭率」排列。无百分号的数值按 q 处理（0.74 = 74%）。撤销 / 重做同时支持数值与探针结构修改。</p>}
     </section>
     {!snapshot && <>
-      {(a.errors.length > 0 || a.issues.length > 0) && <ErrorNote><strong>{a.errors.join('；') || '部分未选探针 / 未用批次的猝灭率不可计算'}</strong>
+      {(a.errors.length > 0 || a.issues.length > 0) && <ErrorNote><strong>{a.errors.join('；') || '部分未选探针的猝灭率无效'}</strong>
         <div className="recognition-issues">{a.issues.slice(0, 18).map((issue, i) => <button key={i} onClick={() => jump(issue)}>
-          {issue.table === 'raw' ? '原始强度' : '空白与批次'} {columnLetter(issue.column)}{issue.row + 1}：{issue.reason}{!issue.blocking && '（不参与本次分析）'}
+          猝灭率 {columnLetter(issue.column)}{issue.row + 1}：{issue.reason}{!issue.blocking && '（不参与本次分析）'}
         </button>)}{a.issues.length > 18 && <span>共 {a.issues.length} 处，先显示前 18 处；修正后自动更新。</span>}</div></ErrorNote>}
       {a.warnings.map((warning) => <p className="recognition-warning" role="status" key={warning}>{warning}</p>)}
       {ready && <>

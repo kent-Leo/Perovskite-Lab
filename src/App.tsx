@@ -68,7 +68,7 @@ const pages = [
     id: 'recognition',
     label: '多探针识别分析',
     icon: ChartScatter,
-    detail: '按实验行整理多探针响应，计算猝灭率、PCA 与层次聚类。',
+    detail: '直接录入多探针猝灭率，绘制 PCA、层次聚类与热图。',
   },
   { id: 'extensions', label: '后续扩展', icon: Layers3, detail: '连接实验、项目与文献的下一步。' },
 ];
