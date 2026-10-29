@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import * as XLSX from 'xlsx';
 
-const evidence = path.resolve('docs/验收-多探针猝灭率-2026.10.28');
+const evidence = path.resolve('docs/验收-多探针图表-v0.9.2-2026.10.29/既有功能回归-2026.10.29');
 mkdirSync(evidence, { recursive: true });
 const moduleOf = (page: Page) => page.getByTestId('recognition-module');
 const view = (page: Page, name: string) => moduleOf(page).getByRole('group', { name: '分析数据视图' }).getByRole('button', { name, exact: true }).click();
@@ -39,7 +39,7 @@ test('direct decimal / percentage input, real-time recalculation and whole-sheet
   await expect(page.getByTestId('recognition-heatmap-chart').locator('[data-heat-row="0"][data-probe-id="probe-1"]')).toHaveAttribute('data-value', '0.7');
   await m.getByLabel('撤销工作表修改', { exact: true }).click(); await expect(input).toHaveValue('0.74');
   await m.getByLabel('重做工作表修改', { exact: true }).click(); await expect(input).toHaveValue('70%');
-  await m.locator('.recognition-data').screenshot({ path: path.join(evidence, '猝灭率直接录入-2026.10.28.png') });
+  await m.locator('.recognition-data').screenshot({ path: path.join(evidence, '猝灭率直接录入-2026.10.29.png') });
 });
 
 test('probe renaming, sorting, insertion, deletion and undo preserve stable measurement IDs', async ({ page }) => {
@@ -78,7 +78,7 @@ test('percentage paste, negative responses, explicit invalid cells and no stale 
   await input.fill('');
   await expect(m.getByRole('alert')).toContainText('空值不能按零处理');
   await expect(heatmap).toHaveCount(0);
-  await m.locator('.recognition-data').screenshot({ path: path.join(evidence, '猝灭率无效单元格-2026.10.28.png') });
+  await m.locator('.recognition-data').screenshot({ path: path.join(evidence, '猝灭率无效单元格-2026.10.29.png') });
 });
 
 test('multi-Sheet regional paste, refresh, independent replicas and read-only result snapshots', async ({ page }) => {
@@ -154,7 +154,7 @@ test('Excel and SVG / PNG export match the visible analysis, full precision, Chi
   const excelEvent = page.waitForEvent('download');
   await moduleOf(page).getByRole('button', { name: '导出分析 Excel', exact: true }).click();
   const excel = await excelEvent, excelPath = path.join(evidence, excel.suggestedFilename()); await excel.saveAs(excelPath);
-  expect(excel.suggestedFilename()).toMatch(/v0\.9\.0-\d{4}\.\d{1,2}\.\d{1,2}\.xlsx$/);
+  expect(excel.suggestedFilename()).toMatch(/v0\.9\.2-\d{4}\.\d{1,2}\.\d{1,2}\.xlsx$/);
   const wb = XLSX.read(readFileSync(excelPath), { type: 'buffer' });
   expect(wb.SheetNames).toEqual(['猝灭率', 'PCA得分', 'PCA载荷', '方差解释率', '聚类结果', 'Ward合并', '分析设置']);
   const q = XLSX.utils.sheet_to_json<any[]>(wb.Sheets['猝灭率'], { header: 1 });
@@ -181,7 +181,7 @@ test('Excel and SVG / PNG export match the visible analysis, full precision, Chi
       await expect(root).toContainText('Z-score');
       await moduleOf(page).getByLabel('热图数值', { exact: true }).selectOption('q');
     }
-    await moduleOf(page).locator('.chart-layout').screenshot({ path: path.join(evidence, `${label}-页面-2026.10.28.png`) });
+    await moduleOf(page).locator('.chart-layout').screenshot({ path: path.join(evidence, `${label}-页面-2026.10.29.png`) });
     for (const format of ['SVG', 'PNG']) {
       const event = page.waitForEvent('download');
       await moduleOf(page).locator('.chart-footer').getByRole('button', { name: format, exact: true }).click();
@@ -203,7 +203,7 @@ test('rank one and zero variance are explicit, colors do not change coordinates,
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => window.scrollTo(0, 0));
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
-  await page.screenshot({ path: path.join(evidence, '多探针识别-手机端-2026.10.28.png'), fullPage: true, animations: 'disabled' });
+  await page.screenshot({ path: path.join(evidence, '多探针识别-手机端-2026.10.29.png'), fullPage: true, animations: 'disabled' });
   await page.setViewportSize({ width: 1440, height: 1050 });
   await moduleOf(page).getByLabel('删除探针 3', { exact: true }).click();
   await paste(moduleOf(page).getByLabel('猝灭率 第 1 行第 4 列', { exact: true }), '0.1\t0.2\n0.2\t0.4\n0.3\t0.6\n0.4\t0.8\n0.5\t1\n0.6\t1.2');

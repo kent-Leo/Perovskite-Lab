@@ -25,7 +25,7 @@ const rows = [
 ];
 describe('worksheet v0.2.0', () => {
   it('exports its version and labels columns beyond Z and reversed ranges', () => {
-    expect(WORKSHEET_VERSION).toBe('0.9.0');
+    expect(WORKSHEET_VERSION).toBe('0.9.2');
     expect([0, 25, 26, 63].map(columnLetter)).toEqual(['A', 'Z', 'AA', 'BL']);
     expect(cellName({ row: 10, column: 26 })).toBe('AA11');
     const s = { anchor: { row: 1, column: 2 }, focus: { row: 0, column: 0 } };

@@ -1,0 +1,16 @@
+{
+  "comparisons": [
+    {
+      "chart": "scores",
+      "sameGeometry": true,
+      "changedFraction": 0
+    },
+    {
+      "chart": "tree",
+      "sameGeometry": true,
+      "changedFraction": 0
+    }
+  ],
+  "channelTolerance": 2,
+  "maximumChangedChannelFraction": 0.00001
+}

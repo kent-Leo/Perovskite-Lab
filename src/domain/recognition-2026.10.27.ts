@@ -16,6 +16,9 @@ export interface RecognitionSettings {
   heatmap: 'q' | 'zscore';
   shape: 'circle' | 'square' | 'triangle' | 'diamond';
   opacity: number; labels: boolean;
+  ionShapes?: Record<string, RecognitionSettings['shape']>;
+  chartLayout?: 'single' | 'paired';
+  paperStyleVersion?: 1;
   ionColors: Record<string, string>; clusterColors: Record<string, string>;
   heatColors: { negative: string; zero: string; positive: string };
   styles: Record<RecognitionChart, ChartStyle>;
@@ -48,12 +51,13 @@ export function defaultRecognition(): RecognitionData {
     settings: {
       preprocessing: 'zscore', decimals: 4, pcX: 0, pcY: 1,
       cutMode: 'count', clusterCount: 2, cutHeight: '', heatmap: 'q',
-      shape: 'circle', opacity: 0.85, labels: false,
+      shape: 'circle', opacity: 0.85, labels: false, ionShapes: {}, chartLayout: 'single', paperStyleVersion: 1,
       ionColors: {}, clusterColors: {},
       heatColors: { negative: '#3b6eb0', zero: '#ffffff', positive: '#c84b45' },
       styles: {
-        scores: style('PC1', 'PC2'), loadings: style('PC1', 'PC2'),
-        tree: style('样本 / 离子 / 平行编号', 'Ward 距离'),
+        scores: { ...style('PC1', 'PC2'), grid: false, legend: 'none', lineWidth: 1.1, fontFamily: 'Arial' },
+        loadings: style('PC1', 'PC2'),
+        tree: { ...style('Ward 合并高度', '离子'), grid: false, legend: 'none', lineWidth: 1.1, fontFamily: 'Arial' },
         heatmap: style('探针', '样本 / 离子 / 平行编号'),
       },
     },
@@ -161,6 +165,19 @@ export function quenching(d: RecognitionData): Responses {
 }
 /** Convert legacy F/F₀ once, retaining an independent copy of every source record. */
 export function asQuenchingInput(d: RecognitionData): RecognitionData {
+  // Upgrade presentation once, keeping every measurement and numerical setting intact.
+  if (!d.settings.paperStyleVersion) {
+    const scores = d.settings.styles.scores, tree = d.settings.styles.tree;
+    const typography = { fontFamily: scores.fontFamily, fontSize: scores.fontSize,
+      lineWidth: scores.lineWidth === 2.4 ? 1.1 : scores.lineWidth };
+    d = { ...d, settings: { ...d.settings, paperStyleVersion: 1, styles: { ...d.settings.styles,
+      scores: { ...scores, ...typography, grid: false, legend: 'none', axes: { ...scores.axes,
+        top: { ...scores.axes?.top, visible: false }, right: { ...scores.axes?.right, visible: false } } },
+      tree: { ...tree, ...typography, grid: false, legend: 'none',
+        xLabel: tree.xLabel === '样本 / 离子 / 平行编号' ? 'Ward 合并高度' : tree.xLabel,
+        yLabel: tree.yLabel === 'Ward 距离' ? '离子' : tree.yLabel },
+    } } };
+  }
   if (d.inputMode === 'q') return d;
   const { q } = quenching(d);
   return { ...d, inputMode: 'q', batches: [],
@@ -359,8 +376,29 @@ export function recognitionFingerprint(d: RecognitionData): string {
     rows: input.rows.map((r) => [r.id, input.probes.map((p) => r.values[p.id] ?? '')]),
     preprocessing: input.settings.preprocessing, cut: [input.settings.cutMode, input.settings.clusterCount, input.settings.cutHeight] });
 }
+const recognitionPalette = [...palette];
+function defaultIonColor(index: number): string {
+  // Extend the existing eight colors instead of cycling them for larger ion panels.
+  while (recognitionPalette.length <= index) {
+    const i = recognitionPalette.length;
+    let hue = ((i - palette.length) * 137.508 + 20) % 360;
+    const lightness = 0.4 + Math.floor((i - palette.length) / 24) % 3 * 0.06;
+    let color: string;
+    do {
+      const a = 0.62 * Math.min(lightness, 1 - lightness);
+      color = '#' + [0, 8, 4].map((offset) => {
+        const k = (offset + hue / 30) % 12;
+        return Math.round((lightness - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))) * 255)
+          .toString(16).padStart(2, '0');
+      }).join('');
+      hue = (hue + 0.5) % 360;
+    } while (recognitionPalette.includes(color));
+    recognitionPalette.push(color);
+  }
+  return recognitionPalette[index];
+}
 export const ionColor = (d: RecognitionData, ion: string) => d.settings.ionColors[ion]
-  ?? palette[Math.max(0, [...new Set(d.rows.map((r) => r.ion))].indexOf(ion)) % palette.length];
+  ?? defaultIonColor(Math.max(0, [...new Set(d.rows.map((r) => r.ion))].indexOf(ion)));
 export const clusterColor = (d: RecognitionData, cluster: number) => d.settings.clusterColors[String(cluster)]
   ?? palette[(cluster - 1) % palette.length];
 

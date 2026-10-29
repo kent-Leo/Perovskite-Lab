@@ -1,0 +1,26 @@
+
+> perovskite-lab@0.9.2 build
+> tsc -b && vite build
+
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 1826 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/worksheet-v0.2.0-2026.10.19.html    0.52 kB │ gzip:   0.33 kB
+dist/index.html                          0.80 kB │ gzip:   0.46 kB
+dist/assets/main-B0JzMbOi.css           18.08 kB │ gzip:   4.13 kB
+dist/assets/styles-DxJXesys.css         37.02 kB │ gzip:   8.37 kB
+dist/assets/worksheet-CbcxWtQ8.js        1.96 kB │ gzip:   1.21 kB
+dist/assets/index-CCQmTuOX.js           46.08 kB │ gzip:  15.08 kB
+dist/assets/styles-DFisAo3i.js         279.74 kB │ gzip:  91.36 kB
+dist/assets/main-CL7JLRrk.js           312.43 kB │ gzip: 108.63 kB
+dist/assets/index-SZBLiFuW.js          390.80 kB │ gzip: 166.12 kB
+dist/assets/xlsx-CKwrMZHi.js           499.55 kB │ gzip: 162.96 kB
+dist/assets/fontkit.es-C7QiVHWT.js     716.75 kB │ gzip: 329.78 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 2.50s

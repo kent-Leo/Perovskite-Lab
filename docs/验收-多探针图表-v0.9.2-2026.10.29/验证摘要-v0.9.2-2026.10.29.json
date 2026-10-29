@@ -1,0 +1,78 @@
+{
+  "date": "2026.10.29",
+  "branch": "feature/v0.9.2",
+  "version": "0.9.2",
+  "unit": {
+    "passed": 293,
+    "testFiles": 24,
+    "log": "单元测试-v0.9.2-2026.10.29.log"
+  },
+  "browser": {
+    "startTime": "2026-10-29T10:35:20.103Z",
+    "duration": 185797.83299999998,
+    "expected": 111,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0,
+    "report": "浏览器回归-v0.9.2-2026.10.29.json"
+  },
+  "targetedBrowser": {
+    "startTime": "2026-10-29T10:45:28.107Z",
+    "duration": 9949.791000000001,
+    "expected": 5,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0,
+    "report": "图表专项复测-v0.9.2-2026.10.29.json"
+  },
+  "strictAffectedTestTypes": true,
+  "productionBuild": true,
+  "diffCheck": true,
+  "numericalSourceUnchanged": {
+    "quenching": true,
+    "quenchingValue": true,
+    "preprocess": true,
+    "pca": true,
+    "ward": true,
+    "cutHierarchy": true,
+    "analyzeRecognition": true,
+    "recognitionFingerprint": true
+  },
+  "exportParity": {
+    "comparisons": [
+      {
+        "chart": "scores",
+        "sameGeometry": true,
+        "changedFraction": 0
+      },
+      {
+        "chart": "tree",
+        "sameGeometry": true,
+        "changedFraction": 0
+      }
+    ],
+    "channelTolerance": 2,
+    "maximumChangedChannelFraction": 1e-05
+  },
+  "visualQA": {
+    "desktop": true,
+    "mobile": true,
+    "largeFonts": true,
+    "crowdedLabels": true,
+    "exportedPNGs": true
+  },
+  "git": {
+    "committed": false,
+    "pushed": false,
+    "deployed": false
+  },
+  "cleanup": {
+    "removedTemporaryScreenshotFiles": 19,
+    "restoredHistoricalScreenshots": [
+      "验证截图-AI-BYOK-2026.10.24/AI处理与导出-2026.10.24.png",
+      "验证截图-AI-BYOK-2026.10.24/移动端设置-2026.10.24.png"
+    ],
+    "temporaryTestOutputRemoved": true,
+    "temporaryScriptsRemaining": false
+  }
+}
