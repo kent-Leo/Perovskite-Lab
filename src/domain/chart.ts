@@ -2,7 +2,14 @@ import { fmt, numeric } from './math';
 import { chartAxes, axisSides, type AxisSide, type ChartStyle, type PlotData } from './types';
 export const escapeXML = (s: string) =>
   s.replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[c]!);
-export function chartSVG(data: PlotData, style: ChartStyle): string {
+/** Optional annotations share the exact scales used to draw the measured points. */
+export interface ChartOverlay {
+  minWidth?: number; minHeight?: number; rightMargin?: number; titlePadding?: number;
+  foreground?: string; axisWidth?: number;
+  render: (layout: { left: number; top: number; width: number; height: number;
+    sx: (x: number) => number; sy: (y: number) => number }) => string;
+}
+export function chartSVG(data: PlotData, style: ChartStyle, overlay?: ChartOverlay): string {
   const ps = data.series.flatMap((s) => s.points);
   if (!ps.length) throw new Error('暂无可绘制数据');
   const bar = !!data.categories, axes = chartAxes(style), fs = style.fontSize;
@@ -57,7 +64,7 @@ export function chartSVG(data: PlotData, style: ChartStyle): string {
     const tickSpace = !a.tickLabels ? 0 : horizontal
       ? bar ? Math.max(fs + 12, ...ticksFor(side).map((t) => labelWidth(t.label) * 0.5 + fs + 10 + (side === 'top' ? fs * 2 : 0))) : fs + 14
       : Math.max(0, ...ticksFor(side).map((t) => labelWidth(t.label))) + 10;
-    return Math.max(30, outward(side) + tickSpace + (a.label ? fs + 25 : 12));
+    return Math.max(30, outward(side) + tickSpace + (a.label ? fs + 25 + (overlay?.titlePadding ?? 0) : 12));
   };
   const legendItems = data.series;
   const legendFontSize = Number.isFinite(style.legendFontSize)
@@ -77,7 +84,7 @@ export function chartSVG(data: PlotData, style: ChartStyle): string {
   const edgeLabels = bar ? Math.max(0, ...(data.categories ?? []).map((s) => labelWidth(s) * 0.866)) : fs * 3;
   const left = Math.max(margin('left'), axes.bottom.visible && axes.bottom.tickLabels ? edgeLabels : 0),
     top = topAxis + (style.title ? fs + 35 : 10),
-    right = Math.max(rightAxis, axes.top.visible && axes.top.tickLabels ? edgeLabels : 0) +
+    right = Math.max(rightAxis, overlay?.rightMargin ?? 0, axes.top.visible && axes.top.tickLabels ? edgeLabels : 0) +
       (style.legend === 'right' && hasLegend ? Math.max(200, legendWidth + 80) : 0),
     bottom = bottomAxis + (bottomLegend ? legendRows * legendRow + legendRow : 10);
   const horizontalTicks = Math.max(0, ...(['top', 'bottom'] as const).map((side) => {
@@ -87,15 +94,15 @@ export function chartSVG(data: PlotData, style: ChartStyle): string {
     return bar ? (width * 0.866 + 16) * (data.categories?.length ?? 0)
       : (width + 16) * axis.divisions;
   }));
-  const W = Math.max(1000, left + right + Math.max(550, horizontalTitle, horizontalTicks)),
-    H = Math.max(600, top + bottom + Math.max(350, verticalTitle),
+  const W = Math.max(1000, overlay?.minWidth ?? 0, left + right + Math.max(550, horizontalTitle, horizontalTicks)),
+    H = Math.max(600, overlay?.minHeight ?? 0, top + bottom + Math.max(350, verticalTitle),
       style.legend === 'right' && hasLegend
         ? top + legendItems.length * legendRow + bottom
         : 0);
   const pw = W - left - right, ph = H - top - bottom;
   const sx = (x: number) => left + ((x - x0) / (x1 - x0)) * pw,
     sy = (y: number) => top + ph - ((y - y0) / (y1 - y0)) * ph;
-  const fg = '#243b39', out: string[] = [];
+  const fg = overlay?.foreground ?? '#243b39', out: string[] = [];
   const text = (x: number, y: number, s: string, anchor = 'start', size = fs, extra = '') =>
     out.push(`<text x="${x}" y="${y}" fill="${fg}" font-size="${size}" text-anchor="${anchor}" ${extra}>${escapeXML(s)}</text>`);
   const line = (x1: number, y1: number, x2: number, y2: number, color = fg, width = 1.1, dashed = false) =>
@@ -194,8 +201,8 @@ export function chartSVG(data: PlotData, style: ChartStyle): string {
       sign = side === 'bottom' || side === 'right' ? 1 : -1,
       baseline = horizontal ? side === 'top' ? top : top + ph : side === 'left' ? left : left + pw;
     out.push(`<g data-axis="${side}">`);
-    if (horizontal) line(left, baseline, left + pw, baseline);
-    else line(baseline, top, baseline, top + ph);
+    if (horizontal) line(left, baseline, left + pw, baseline, fg, overlay?.axisWidth);
+    else line(baseline, top, baseline, top + ph, fg, overlay?.axisWidth);
     out.push('<g data-axis-ticks="true">');
     for (const { value } of ticksFor(side)) {
       if (a.ticks === 'none' || a.tickLength === 0) continue;
@@ -219,7 +226,7 @@ export function chartSVG(data: PlotData, style: ChartStyle): string {
         const y = side === 'top' ? baseline - topAxis + fs + 5 : baseline + bottomAxis - 8;
         text(left + pw / 2, y, a.label, 'middle', fs + 1, 'data-axis-title="true"');
       } else {
-        const x = side === 'left' ? left - margin('left') + fs + 2 : baseline + rightAxis - fs - 2,
+        const x = side === 'left' ? left - margin('left') + fs + 2 + (overlay?.titlePadding ?? 0) : baseline + rightAxis - fs - 2,
           y = top + ph / 2, rotation = side === 'left' ? -90 : 90;
         text(x, y, a.label, 'middle', fs + 1, `data-axis-title="true" transform="rotate(${rotation} ${x} ${y})"`);
       }
@@ -273,6 +280,7 @@ export function chartSVG(data: PlotData, style: ChartStyle): string {
     });
     out.push('</g>');
   }
+  if (overlay) out.push(overlay.render({ left, top, width: pw, height: ph, sx, sy }));
   out.push('</svg>');
   return out.join('');
 }

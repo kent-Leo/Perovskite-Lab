@@ -15,6 +15,7 @@ import {
   RECOGNITION_LIMITS, type CellIssue, type RecognitionChart, type RecognitionData, type RecognitionSettings,
 } from '../domain/recognition-2026.10.27';
 import { hierarchySVG } from '../domain/recognition-charts-2026.10.27';
+import { scorePlot, scoresSVG, treeStyle } from '../domain/recognition-paper-charts-v0.9.2-2026.10.29';
 import { recognitionExcel, recognitionTables } from '../services/recognition-export-2026.10.27';
 import { dateStamp } from '../services/download';
 import './Recognition-2026.10.27.css';
@@ -115,27 +116,42 @@ export function Recognition() {
   const sourceData = source && (source.payload as RecognitionSheetPayload).recognition;
   const staleSnapshot = snapshot && (!sourceData || recognitionFingerprint(sourceData) !== recognitionFingerprint(d));
   const ids = [...new Set(d.rows.map((r) => r.ion).filter(Boolean))];
-  const plot: PlotData = { series: [] };
-  if (ready && rank >= 2 && (chart === 'scores' || chart === 'loadings')) {
-    if (chart === 'scores') plot.series = ids.map((ion) => ({ name: ion, color: ionColor(d, ion), kind: 'scatter',
-      pointShape: s.shape, opacity: s.opacity, labels: s.labels,
-      points: d.rows.flatMap((r, i) => r.ion !== ion ? [] : [{
-        x: a.pca!.scores[i][pcX], y: a.pca!.scores[i][pcY], label: `${r.sample} / ${r.replicate}`,
-        tooltip: `样本 ID: ${r.sample}\n离子: ${r.ion}\n平行编号: ${r.replicate}\nPC${pcX + 1}: ${a.pca!.scores[i][pcX]}\nPC${pcY + 1}: ${a.pca!.scores[i][pcY]}`,
-      }]),
-    }));
-    else plot.series = a.selected.map((p, i) => ({ name: p.name, color: p.color, kind: 'scatter', arrows: true, labels: true,
+  const paired = s.chartLayout === 'paired';
+  const plotFor = (target: RecognitionChart): PlotData => {
+    if (!ready || rank < 2) return { series: [] };
+    if (target === 'scores') return scorePlot(d, a);
+    if (target !== 'loadings') return { series: [] };
+    return { series: a.selected.map((p, i) => ({ name: p.name, color: p.color, kind: 'scatter', arrows: true, labels: true,
       points: [{ x: a.pca!.loadings[i][pcX], y: a.pca!.loadings[i][pcY], label: p.name,
         tooltip: `${p.name}\nPC${pcX + 1}: ${a.pca!.loadings[i][pcX]}\nPC${pcY + 1}: ${a.pca!.loadings[i][pcY]}` }],
-    }));
-  }
-  const baseStyle = s.styles[chart];
-  const chartStyle: ChartStyle = chart === 'scores' || chart === 'loadings' ? { ...baseStyle,
-    xLabel: `${baseStyle.xLabel.replace(/PC\d+.*$/, '').trim()} PC${pcX + 1} (${((a.pca?.explained[pcX] ?? 0) * 100).toFixed(2)}%)`.trim(),
-    yLabel: `${baseStyle.yLabel.replace(/PC\d+.*$/, '').trim()} PC${pcY + 1} (${((a.pca?.explained[pcY] ?? 0) * 100).toFixed(2)}%)`.trim(),
-    ...(chart === 'loadings' ? { xMin: baseStyle.xMin || '-1.2', xMax: baseStyle.xMax || '1.2', yMin: baseStyle.yMin || '-1.2', yMax: baseStyle.yMax || '1.2' } : {}),
-  } : baseStyle;
-  const setStyle = (patch: Partial<ChartStyle>) => settings({ styles: { ...s.styles, [chart]: { ...baseStyle, ...patch } } });
+    })) };
+  };
+  const setStyle = (target: RecognitionChart, patch: Partial<ChartStyle>) => {
+    const shared = Object.fromEntries(Object.entries(patch).filter(([key]) => ['fontFamily', 'fontSize', 'lineWidth'].includes(key)));
+    const peer = target === 'scores' ? 'tree' : target === 'tree' ? 'scores' : undefined;
+    settings({ styles: { ...s.styles, ...(peer ? { [peer]: { ...s.styles[peer], ...shared } } : {}),
+      [target]: { ...s.styles[target], ...patch } } });
+  };
+  const renderPanel = (target: RecognitionChart) => {
+    if (rank < 2 && (target === 'scores' || target === 'loadings')) return null;
+    const baseStyle = target === 'tree' ? treeStyle(s.styles[target]) : s.styles[target];
+    const plot = plotFor(target);
+    return <ChartPanel key={`${target}-${paired}`} kind="spectra" data={plot} title={chartNames[target]} chartTitle={baseStyle.title}
+      onChartTitleChange={(title) => setStyle(target, { title })} subtitle={`${preprocessingLabel(s.preprocessing)} · ${target === 'heatmap' ? s.heatmap === 'q' ? '原始 q' : 'Z-score (ddof=1)' : '平行实验分别保留'}`}
+      custom={{ id: `recognition-${target}`, name: chartNames[target], style: baseStyle,
+        onChange: (patch) => setStyle(target, patch), initialSettingsOpen: !paired,
+        paper: target === 'scores' || target === 'tree' ? target : undefined,
+        categorical: target === 'tree' || target === 'heatmap',
+        renderSVG: (style: ChartStyle) => {
+          if (target === 'scores') return scoresSVG(d, a, style);
+          if (target === 'tree' || target === 'heatmap') return hierarchySVG(d, a, style, target === 'heatmap');
+          return chartSVG(plot, { ...style,
+            xLabel: `${style.xLabel.replace(/PC\d+.*$/, '').trim()} PC${pcX + 1} (${((a.pca?.explained[pcX] ?? 0) * 100).toFixed(2)}%)`.trim(),
+            yLabel: `${style.yLabel.replace(/PC\d+.*$/, '').trim()} PC${pcY + 1} (${((a.pca?.explained[pcY] ?? 0) * 100).toFixed(2)}%)`.trim(),
+            xMin: style.xMin || '-1.2', xMax: style.xMax || '1.2', yMin: style.yMin || '-1.2', yMax: style.yMax || '1.2' });
+        },
+      }} />;
+  };
   const resetDemo = () => {
     if (d.rows.length && !window.confirm('用演示数据替换当前多探针 Sheet？可通过撤销恢复。')) return;
     change(demoRecognition()); setView('猝灭率');
@@ -225,36 +241,41 @@ export function Recognition() {
       {ready && <>
         <section className="panel recognition-visual-options">
           <SectionHead title="图形与颜色" detail={`当前：${d.rows.length} 行独立实验 · ${a.selected.length} 个探针 · ${rank} 个有效主成分。颜色与标签不作为数值特征。`} />
-          <div className="recognition-tabs" role="group" aria-label="识别分析图形">{(Object.keys(chartNames) as RecognitionChart[]).map((id) => <button key={id} aria-pressed={chart === id} className={chart === id ? 'selected' : ''} onClick={() => setChart(id)}>{chartNames[id]}</button>)}</div>
+          <div className="recognition-tabs" role="group" aria-label="识别分析图形">{(Object.keys(chartNames) as RecognitionChart[]).map((id) => <button key={id} aria-pressed={!paired && chart === id} className={!paired && chart === id ? 'selected' : ''} onClick={() => { setChart(id); if (paired) settings({ chartLayout: 'single' }); }}>{chartNames[id]}</button>)}</div>
+          <div className="recognition-tabs" role="group" aria-label="图表展示方式">
+            <button aria-pressed={!paired} className={!paired ? 'selected' : ''} onClick={() => settings({ chartLayout: 'single' })}>单图查看</button>
+            <button aria-pressed={paired} className={paired ? 'selected' : ''} onClick={() => settings({ chartLayout: 'paired' })}>PCA + 聚类双图</button>
+          </div>
           <div className="form-grid">
-            {(chart === 'scores' || chart === 'loadings') && <>
+            {(paired || chart === 'scores' || chart === 'loadings') && <>
               <Field label="横轴主成分"><select value={pcX} onChange={(e) => { const x = Number(e.target.value); settings({ pcX: x, ...(x === pcY ? { pcY: pcX } : {}) }); }}>
                 {a.pca!.explained.map((v, i) => <option value={i} key={i}>PC{i + 1} ({(v * 100).toFixed(2)}%)</option>)}</select></Field>
               <Field label="纵轴主成分"><select value={rank < 2 ? 0 : pcY} disabled={rank < 2} onChange={(e) => settings({ pcY: Number(e.target.value) })}>
                 {a.pca!.explained.map((v, i) => <option value={i} disabled={i === pcX} key={i}>PC{i + 1} ({(v * 100).toFixed(2)}%)</option>)}</select></Field>
             </>}
-            {chart === 'scores' && <>
+            {(paired || chart === 'scores') && <>
               <Field label="样本点形状"><select value={s.shape} onChange={(e) => settings({ shape: e.target.value as RecognitionSettings['shape'] })}>
                 <option value="circle">圆形</option><option value="square">方形</option><option value="triangle">三角形</option><option value="diamond">菱形</option></select></Field>
               <Field label="样本点透明度"><input type="number" min={0.05} max={1} step={0.05} value={s.opacity} onChange={(e) => settings({ opacity: Math.max(0.05, Math.min(1, Number(e.target.value))) })} /></Field>
-              <label className="check-line"><input type="checkbox" checked={s.labels} onChange={(e) => settings({ labels: e.target.checked })} />显示样本标签</label>
+              <p className="muted">每种离子标注一次；标签自动避让散点。</p>
             </>}
             {chart === 'heatmap' && <Field label="热图数值"><select value={s.heatmap} onChange={(e) => settings({ heatmap: e.target.value as 'q' | 'zscore' })}>
               <option value="q">原始 q</option><option value="zscore">Z-score 标准化值（ddof=1）</option></select></Field>}
           </div>
           <div className="recognition-colors">
             <fieldset><legend>离子颜色</legend>{ids.map((ion) => <label key={ion}><input type="color" aria-label={`离子颜色 ${ion}`} value={ionColor(d, ion)} onChange={(e) => settings({ ionColors: { ...s.ionColors, [ion]: e.target.value } })} />{ion}</label>)}</fieldset>
+            <fieldset><legend>离子散点形状</legend>{ids.map((ion) => <label key={ion}>{ion}<select aria-label={`离子形状 ${ion}`} value={s.ionShapes?.[ion] ?? ''} onChange={(e) => {
+              const ionShapes = { ...s.ionShapes };
+              if (e.target.value) ionShapes[ion] = e.target.value as RecognitionSettings['shape']; else delete ionShapes[ion];
+              settings({ ionShapes });
+            }}><option value="">跟随默认</option><option value="circle">圆形</option><option value="square">方形</option><option value="triangle">三角形</option><option value="diamond">菱形</option></select></label>)}</fieldset>
             <fieldset><legend>聚类颜色</legend>{Array.from({ length: Math.max(...a.clusters!) }, (_, i) => i + 1).map((cluster) => <label key={cluster}><input type="color" aria-label={`聚类颜色 ${cluster}`} value={clusterColor(d, cluster)} onChange={(e) => settings({ clusterColors: { ...s.clusterColors, [String(cluster)]: e.target.value } })} />簇 {cluster}</label>)}</fieldset>
             <fieldset><legend>热图色阶（以零为中心）</legend>{(['negative', 'zero', 'positive'] as const).map((key, i) => <label key={key}><input type="color" aria-label={`热图${['负值', '零值', '正值'][i]}颜色`} value={s.heatColors[key]} onChange={(e) => settings({ heatColors: { ...s.heatColors, [key]: e.target.value } })} />{['负值', '零', '正值'][i]}</label>)}</fieldset>
           </div>
         </section>
-        {(chart === 'tree' || chart === 'heatmap' || rank >= 2) && <ChartPanel kind="spectra" data={plot} title={chartNames[chart]} chartTitle={baseStyle.title}
-          onChartTitleChange={(title) => setStyle({ title })} subtitle={`${preprocessingLabel(s.preprocessing)} · ${chart === 'heatmap' ? s.heatmap === 'q' ? '原始 q' : 'Z-score (ddof=1)' : '平行实验分别保留'}`}
-          custom={{ id: `recognition-${chart}`, name: chartNames[chart], style: baseStyle, onChange: setStyle,
-            categorical: chart === 'tree' || chart === 'heatmap',
-            renderSVG: (style: ChartStyle) => chart === 'tree' || chart === 'heatmap'
-              ? hierarchySVG(d, a, style, chart === 'heatmap') : chartSVG(plot, { ...chartStyle, title: style.title }),
-          }} />}
+        <div className={`recognition-charts ${paired ? 'recognition-charts-paired' : ''}`} data-testid="recognition-chart-layout">
+          {(paired ? ['scores', 'tree'] as RecognitionChart[] : [chart]).map(renderPanel)}
+        </div>
       </>}
     </>}
   </div>;

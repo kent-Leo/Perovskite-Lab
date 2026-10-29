@@ -1,0 +1,40 @@
+
+> perovskite-lab@0.9.2 test
+> vitest run
+
+
+ RUN  v3.2.7 /Users/liuzhe/Documents/deepseek-harness/default-workspace/Perovskite-Lab
+
+ ✓ tests/ai-processing-2026.10.24.test.ts (7 tests) 44ms
+ ✓ tests/import.test.ts (15 tests) 81ms
+ ✓ tests/recognition-2026.10.27.test.ts (51 tests) 47ms
+ ✓ tests/assistant-scan-range-2026.10.26.test.ts (14 tests) 71ms
+ ✓ tests/assistant-export-sync-2026.10.25.test.ts (9 tests) 79ms
+ ✓ tests/workbook-v0.5.5-2026.10.22.test.ts (30 tests) 12ms
+ ✓ tests/assistant-command-2026.10.25.test.ts (8 tests) 30ms
+ ✓ tests/ai-chat-2026.10.25.test.ts (12 tests) 47ms
+ ✓ tests/ai-relay-2026.10.24.test.ts (12 tests) 49ms
+ ✓ tests/assistant-processing-2026.10.25.test.ts (8 tests) 17ms
+ ✓ tests/ai-assistant-relay-2026.10.25.test.ts (6 tests) 24ms
+ ✓ tests/f7100-parse-2026.10.25.test.ts (10 tests) 23ms
+ ✓ tests/blank-axis-labels-2026.10.21.test.ts (3 tests) 18ms
+ ✓ tests/chart-values-and-titles-v0.6.0.test.ts (12 tests) 8ms
+ ✓ tests/math.test.ts (12 tests) 6ms
+ ✓ tests/paste-2026.10.18.test.ts (7 tests) 9ms
+ ✓ tests/gradient-units-v0.3.2-2026.10.20.test.ts (5 tests) 5ms
+ ✓ tests/chart-axes-v0.3.1-2026.10.19.test.ts (4 tests) 4ms
+ ✓ tests/raw-sheet-edit-v0.5.5.test.ts (8 tests) 4ms
+ ✓ tests/worksheet-v0.2.0-2026.10.19.test.ts (10 tests) 8ms
+ ✓ tests/assistant-batch-edit-2026.10.25.test.ts (24 tests) 998ms
+   ✓ combined Excel and Sheet parity > exports three complete samples, deleted vs masked rows, full audit, parameters, and the same Sheet values  434ms
+   ✓ combined Excel and Sheet parity > sanitizes/truncates names, resolves case collisions and splits every sheet below row limits  326ms
+ ✓ tests/legend-2026.10.22.test.ts (3 tests) 4ms
+ ✓ tests/peak-raw-metadata-2026.10.22.test.ts (7 tests) 6ms
+ ✓ tests/recognition-paper-charts-v0.9.2-2026.10.29.test.ts (16 tests) 1673ms
+   ✓ paper recognition charts > preserves all 500 replicates, including zero-height duplicate merges, with legible leaf spacing  1640ms
+
+ Test Files  24 passed (24)
+      Tests  293 passed (293)
+   Start at  18:38:20
+   Duration  2.19s (transform 845ms, setup 0ms, collect 2.47s, tests 3.26s, environment 2ms, prepare 1.46s)
+

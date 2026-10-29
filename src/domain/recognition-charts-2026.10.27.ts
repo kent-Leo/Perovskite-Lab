@@ -1,6 +1,7 @@
 import { escapeXML as esc } from './chart';
 import { clusterColor, type RecognitionAnalysis, type RecognitionData } from './recognition-2026.10.27';
 import type { ChartStyle } from './types';
+import { horizontalHierarchySVG } from './recognition-paper-charts-v0.9.2-2026.10.29';
 
 export function responseColor(value: number, limit: number, colors: RecognitionData['settings']['heatColors']): string {
   const t = Math.min(1, Math.abs(value) / (limit || 1));
@@ -13,6 +14,7 @@ const textWidth = (value: string, size: number) => [...value].reduce((sum, c) =>
 
 /** One hierarchy supplies every leaf position, label and heat cell index. */
 export function hierarchySVG(d: RecognitionData, a: RecognitionAnalysis, style: ChartStyle, heatmap: boolean): string {
+  if (!heatmap) return horizontalHierarchySVG(d, a, style);
   const h = a.hierarchy, clusters = a.clusters;
   if (!h || !clusters) throw new Error('请先修正数据并完成聚类');
   const n = h.size, fs = style.fontSize, probes = a.selected;

@@ -1,0 +1,253 @@
+{
+  "config": {
+    "argv": [
+      "/usr/local/bin/node",
+      "/Users/liuzhe/Documents/deepseek-harness/default-workspace/Perovskite-Lab/node_modules/@playwright/test/cli.js",
+      "test",
+      "tests/browser/recognition-paper-charts-v0.9.2-2026.10.29.spec.ts",
+      "--reporter=list,json"
+    ],
+    "configFile": "/Users/liuzhe/Documents/deepseek-harness/default-workspace/Perovskite-Lab/playwright.config.ts",
+    "rootDir": "/Users/liuzhe/Documents/deepseek-harness/default-workspace/Perovskite-Lab/tests/browser",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/Users/liuzhe/Documents/deepseek-harness/default-workspace/Perovskite-Lab/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/Users/liuzhe/Documents/deepseek-harness/default-workspace/Perovskite-Lab/tests/browser",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 60000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.63.0",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "recognition-paper-charts-v0.9.2-2026.10.29.spec.ts",
+      "file": "recognition-paper-charts-v0.9.2-2026.10.29.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "paper PCA uses one chemical label per ion and keeps all true scores across visual changes",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1051,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-29T10:45:28.432Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "40fd6992ed378bf590e0-abf6e2187ae46c871a30",
+          "file": "recognition-paper-charts-v0.9.2-2026.10.29.spec.ts",
+          "line": 47,
+          "column": 1
+        },
+        {
+          "title": "horizontal tree keeps six replicas and original merge heights, with only ion formulas visible",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 711,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-29T10:45:30.278Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "40fd6992ed378bf590e0-cca4dbb168a572d47509",
+          "file": "recognition-paper-charts-v0.9.2-2026.10.29.spec.ts",
+          "line": 72,
+          "column": 1
+        },
+        {
+          "title": "paired desktop layout stacks on mobile and keeps independent downloads and shared typography",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1570,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-29T10:45:30.996Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "40fd6992ed378bf590e0-3ba4bba3433ed3610f9f",
+          "file": "recognition-paper-charts-v0.9.2-2026.10.29.spec.ts",
+          "line": 99,
+          "column": 1
+        },
+        {
+          "title": "crowded scores, large fonts and long labels remain bounded without collisions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1894,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-29T10:45:32.579Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "40fd6992ed378bf590e0-7063cdec4727eadbe956",
+          "file": "recognition-paper-charts-v0.9.2-2026.10.29.spec.ts",
+          "line": 130,
+          "column": 1
+        },
+        {
+          "title": "SVG geometry equals the preview and PNG pixels equal the exported SVG raster",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 3349,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-29T10:45:34.481Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "40fd6992ed378bf590e0-88948e5dc94707b050a7",
+          "file": "recognition-paper-charts-v0.9.2-2026.10.29.spec.ts",
+          "line": 157,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-29T10:45:28.107Z",
+    "duration": 9949.791000000001,
+    "expected": 5,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

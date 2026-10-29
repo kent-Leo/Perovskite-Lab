@@ -28,11 +28,14 @@ export function ChartPanel({
     onChange: (patch: Partial<ChartStyle>) => void;
     renderSVG?: (style: ChartStyle) => string;
     categorical?: boolean;
+    /** Recognition paper figures have direct labels and only the relevant axes. */
+    paper?: 'scores' | 'tree';
+    initialSettingsOpen?: boolean;
   };
 }) {
   const { w, update, notify } = useWorkspace(),
     style = custom?.style ?? w.styles[kind];
-  const [settings, setSettings] = useState(true),
+  const [settings, setSettings] = useState(custom?.initialSettingsOpen ?? true),
     [tab, setTab] = useState('appearance'),
     [axisSide, setAxisSide] = useState<AxisSide>('bottom'),
     [busy, setBusy] = useState('');
@@ -133,7 +136,7 @@ export function ChartPanel({
     }
   }
   return (
-    <div className={`chart-layout ${settings ? '' : 'settings-hidden'}`}>
+    <div className={`chart-layout ${settings ? '' : 'settings-hidden'} ${custom?.paper ? 'recognition-paper-chart' : ''}`}>
       <section className="chart-card">
         <div className="chart-head">
           <div>
@@ -284,7 +287,7 @@ export function ChartPanel({
                     }
                   />
                 </Field>
-                <Field label="图例字号">
+                {!custom?.paper && <Field label="图例字号">
                   <input
                     type="number"
                     min={8}
@@ -296,9 +299,9 @@ export function ChartPanel({
                       })
                     }
                   />
-                </Field>
+                </Field>}
               </div>
-              <Field label="图例位置">
+              {!custom?.paper && <><Field label="图例位置">
                 <select
                   value={style.legend}
                   onChange={(e) => set({ legend: e.target.value as ChartStyle['legend'] })}
@@ -354,15 +357,15 @@ export function ChartPanel({
                   </button>
                 </>
               )}
-              <p className="muted">图例可直接在图中拖动；位置与字号随 {custom ? 'PNG / SVG' : 'PNG / SVG / PDF'} 导出。</p>
-              {!custom?.categorical && <><label className="check-line">
+              <p className="muted">图例可直接在图中拖动；位置与字号随 {custom ? 'PNG / SVG' : 'PNG / SVG / PDF'} 导出。</p></>}
+              {!custom?.categorical && <>{!custom?.paper && <label className="check-line">
                 <input
                   type="checkbox"
                   checked={style.grid}
                   onChange={(e) => set({ grid: e.target.checked })}
                 />
                 显示网格
-              </label>
+              </label>}
               {!custom && <label className="check-line">
                 <input
                   type="checkbox"
@@ -398,7 +401,7 @@ export function ChartPanel({
                 <p className="muted">样本顺序由完整响应矩阵的 Ward 树确定。</p>
               </> : <><div className="axis-editor">
                 <div className="axis-side-tabs" role="group" aria-label="选择坐标轴">
-                  {axisSides.map((side) => (
+                  {axisSides.filter((side) => !custom?.paper || side === 'bottom' || side === 'left').map((side) => (
                     <button key={side} type="button" aria-pressed={axisSide === side}
                       className={axisSide === side ? 'selected' : ''} onClick={() => setAxisSide(side)}>
                       {axisNames[side]}
@@ -437,7 +440,7 @@ export function ChartPanel({
                     disabled={!!data.categories && (axisSide === 'top' || axisSide === 'bottom')}
                     onChange={(e) => setAxis({ divisions: Math.max(1, Math.min(20, Math.round(Number(e.target.value)))) })} />
                 </Field>
-                <p className="muted">上 / 下轴共用 X 范围，左 / 右轴共用 Y 范围。</p>
+                {!custom?.paper && <p className="muted">上 / 下轴共用 X 范围，左 / 右轴共用 Y 范围。</p>}
               </div>
               <p className="muted">范围留空时自动计算</p>
               <div className="form-grid">

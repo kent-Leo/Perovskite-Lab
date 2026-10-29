@@ -72,7 +72,7 @@ test('raw spectrum paste expands columns, updates plotted data and supports undo
     el.blur();
     el.focus();
   });
-  expect(await nameInput.evaluate((el) => [el.selectionStart, el.selectionEnd])).toEqual([0, 4]);
+  expect(await nameInput.evaluate((el) => [(el as HTMLInputElement).selectionStart, (el as HTMLInputElement).selectionEnd])).toEqual([0, 4]);
   await paste(nameInput, 'A\tB\tC');
   await expect(page.getByLabel('原始光谱 第 2 列名称', { exact: true })).toHaveValue('A');
   await expect(page.getByLabel('原始光谱 第 3 列名称', { exact: true })).toHaveValue('B');
@@ -154,7 +154,7 @@ test('gradient stays editable on errors, recalculates, undoes changes and export
   const downloaded = page.waitForEvent('download');
   await page.getByRole('button', { name: '导出 Excel', exact: true }).click();
   const file = await downloaded;
-  expect(file.suggestedFilename()).toMatch(/-v0\.9\.0-\d{4}\.\d{1,2}\.\d{1,2}\.xlsx$/);
+  expect(file.suggestedFilename()).toMatch(/-v0\.9\.2-\d{4}\.\d{1,2}\.\d{1,2}\.xlsx$/);
   const path = info.outputPath('梯度-v0.7.0-2026.10.24.xlsx');
   await file.saveAs(path);
   const records = XLSX.utils.sheet_to_json<Record<string, unknown>>(

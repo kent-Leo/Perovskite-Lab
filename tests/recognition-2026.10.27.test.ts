@@ -261,7 +261,8 @@ describe('shared results, charts, persistence and old workbook compatibility', (
     expect(analyzeRecognition(d).pca).toEqual(a.pca);
     expect(responseColor(-1, 1, d.settings.heatColors)).toBe('#123456');
     expect(responseColor(0, 1, d.settings.heatColors)).toBe('#ffffff');
-    expect(hierarchySVG(d, a, { ...d.settings.styles.tree, title: 'Fe³⁺ 树' }, false)).toContain('#aabbcc');
+    expect(hierarchySVG(d, a, { ...d.settings.styles.heatmap, title: 'Fe³⁺ 热图' }, true)).toContain('#aabbcc');
+    expect(hierarchySVG(d, a, d.settings.styles.tree, false)).not.toContain('#aabbcc');
   });
   it('keeps heatmap values and labels aligned after tree ordering and probe reordering', () => {
     const d = moveProbe(demoRecognition(), 2, 0), a = analyzeRecognition(d);

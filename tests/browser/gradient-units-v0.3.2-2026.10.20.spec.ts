@@ -19,7 +19,7 @@ test('independent units preserve recipes, synchronize export and survive refresh
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: '导出 Excel', exact: true }).click();
   const file = await download;
-  expect(file.suggestedFilename()).toMatch(/-v0\.9\.0-\d{4}\.\d{1,2}\.\d{1,2}\.xlsx$/);
+  expect(file.suggestedFilename()).toMatch(/-v0\.9\.2-\d{4}\.\d{1,2}\.\d{1,2}\.xlsx$/);
   const path = info.outputPath('浓度梯度-v0.7.0-2026.10.24.xlsx');
   await file.saveAs(path);
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(XLSX.read(await readFile(path)).Sheets.Data);

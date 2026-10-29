@@ -25,7 +25,22 @@
 .recognition .worksheet { max-width: 100%; }
 .recognition-data { min-width: 0; }
 .recognition-intro .section-head { align-items: flex-start; }
+.recognition-charts { display: grid; gap: 20px; min-width: 0; }
+.recognition-charts > .chart-layout { min-width: 0; }
+.recognition-charts-paired { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+.recognition-charts-paired > .chart-layout { grid-template-columns: minmax(0, 1fr); }
+.recognition-charts .recognition-paper-chart .svg-chart svg { min-width: 0; width: 100%; height: auto; }
+.recognition-charts .chart-stage { min-width: 0; }
+.recognition-charts-paired .chart-head { padding: 16px; }
+.recognition-charts-paired .chart-head h2 { font-size: 16px; }
+.recognition-charts-paired .style-panel { width: 100%; min-width: 0; }
+.recognition-colors select { width: auto; max-width: 130px; }
+@media (max-width: 900px) {
+  .recognition-charts-paired { grid-template-columns: minmax(0, 1fr); }
+}
 @media (max-width: 700px) {
+  .recognition-charts .recognition-paper-chart .svg-chart svg { min-width: 640px; }
+  .recognition-charts .recognition-paper-chart .chart-scroll-hint { display: block; }
   .recognition .panel { padding: 14px; }
   .recognition-probes { grid-template-columns: minmax(0, 1fr); }
   .recognition .section-head { flex-direction: column; align-items: stretch; gap: 10px; }
