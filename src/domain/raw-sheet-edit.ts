@@ -1,5 +1,5 @@
 import type { ColumnMetadata, SheetMapping } from './types';
-import { rawColumnIndex, rawColumnKey } from './raw-spectra';
+import { rawColumnIndex, rawColumnKey, syncRawMapping } from './raw-spectra';
 
 /** Draft table of the active raw-spectrum sheet. */
 export interface RawSheetDraft {
@@ -57,11 +57,18 @@ export function insertRawSheetColumn(
     next.splice(index, 0, '');
     return next;
   });
-  const mapping: SheetMapping = {
+  const shifted = {
     ...sheet.mapping,
     x: sheet.mapping.x >= index ? sheet.mapping.x + 1 : sheet.mapping.x,
     ys: sheet.mapping.ys.map((value) => (value >= index ? value + 1 : value)),
+    meta: [
+      ...new Set([
+        ...(sheet.mapping.meta ?? []).map((value) => (value >= index ? value + 1 : value)),
+        index,
+      ]),
+    ].sort((a, b) => a - b),
   };
+  const mapping: SheetMapping = syncRawMapping(grid, shifted);
   const nextMetadata = Object.fromEntries(
     Object.entries(metadata ?? {}).map(([key, value]) => [shiftKey(key, index), value]),
   );

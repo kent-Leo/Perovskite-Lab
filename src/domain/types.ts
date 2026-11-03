@@ -184,6 +184,8 @@ export interface SheetMapping {
   header: boolean;
   x: number;
   ys: number[];
+  /** Raw-table columns explicitly excluded from intensity plotting (shown as Meta). */
+  meta?: number[];
   name: number;
   concentration: number;
   unit: string;

@@ -8,7 +8,9 @@ import { insertRawSheetColumn, insertRawSheetRow } from '../domain/raw-sheet-edi
 import {
   rawColumnIndex,
   rawColumnKey,
+  rawIntensityColumns,
   rawSpectrumColor,
+  syncRawMapping,
 } from '../domain/raw-spectra';
 import type { Mapping } from '../services/import';
 import { dateStamp } from '../services/download';
@@ -105,6 +107,20 @@ export function PasteSpectraTable() {
     updateMapping({ ...mapping, ...changes });
     setError('');
   };
+  function setWavelengthColumn(x: number) {
+    const meta = new Set(mapping.meta ?? []);
+    meta.add(mapping.x);
+    meta.delete(x);
+    const next = { ...mapping, x, meta: [...meta].sort((a, b) => a - b) };
+    patch({ x, meta: next.meta, ys: rawIntensityColumns(grid, next) });
+  }
+  function setIntensityColumn(column: number, checked: boolean) {
+    const meta = new Set(mapping.meta ?? []);
+    if (checked) meta.delete(column);
+    else meta.add(column);
+    const next = { ...mapping, meta: [...meta].sort((a, b) => a - b) };
+    patch({ meta: next.meta, ys: rawIntensityColumns(grid, next) });
+  }
   function setColor(column: number, color: string) {
     const sheetId = wb.activeId;
     update((prev) => {
@@ -169,7 +185,7 @@ export function PasteSpectraTable() {
         grid.length + extraRows,
         (grid[0]?.length ?? 3) + extraColumns,
       );
-      patchSheet({ grid: nextGrid });
+      updateMapping(syncRawMapping(nextGrid, mapping), nextGrid);
       setError('');
     } catch (e) {
       setError((e as Error).message);
@@ -181,7 +197,7 @@ export function PasteSpectraTable() {
     const nextBatch = new Map(batch.current);
     const metadata = w.sheetMetadata?.[wb.activeId] ?? {};
     const spectra = r.spectra.map((s, i) => {
-      const col = mapping.ys[i],
+      const col = r.columns[i],
         key = rawColumnKey(col),
         // Reuse the persisted mapping after a reload so replotting updates rather than duplicates.
         previousId = batch.current.get(col) ?? w.rawColumnSpectra?.[key],
@@ -285,10 +301,7 @@ export function PasteSpectraTable() {
         <Field label="粘贴数据波长列">
           <select
             value={mapping.x}
-            onChange={(e) => {
-              const x = Number(e.target.value);
-              patch({ x, ys: mapping.ys.filter((col) => col !== x) });
-            }}
+            onChange={(e) => setWavelengthColumn(Number(e.target.value))}
           >
             {columns.map((col) => (
               <option key={col} value={col}>
@@ -320,13 +333,7 @@ export function PasteSpectraTable() {
                 type="checkbox"
                 aria-label={`第 ${col + 1} 列作为强度`}
                 checked={mapping.ys.includes(col)}
-                onChange={(e) =>
-                  patch({
-                    ys: e.target.checked
-                      ? [...mapping.ys, col].sort((a, b) => a - b)
-                      : mapping.ys.filter((y) => y !== col),
-                  })
-                }
+                onChange={(e) => setIntensityColumn(col, e.target.checked)}
               />
               第 {col + 1} 列作为强度
             </label>
@@ -385,7 +392,9 @@ export function PasteSpectraTable() {
             // A paste at the top-left re-detects the columns and the start row.
             updateMapping(suggestPasteMapping(next, w.calUnit), nextGrid);
           } else {
-            patchSheet({ grid: nextGrid });
+            const nextMapping = syncRawMapping(nextGrid, mapping);
+            if (nextMapping !== mapping) updateMapping(nextMapping, nextGrid);
+            else patchSheet({ grid: nextGrid });
           }
           setError('');
         }}

@@ -79,6 +79,19 @@ export function suggestPasteMapping(grid: string[][], unit: string): Mapping {
 
 export interface PastedSpectrumIssue { row: number; column: number; reason: string }
 
+/**
+ * Regular raw tables may pre-select empty columns while the user prepares the
+ * table; those columns are skipped until they contain data. AI processed sheets
+ * opt into strict blank handling with `allowEmptyIntensity`.
+ */
+export function selectedIntensityColumns(grid: string[][], mapping: Mapping) {
+  if (mapping.kind !== 'wide' || mapping.allowEmptyIntensity) return mapping.ys;
+  const start = mapping.start - 1 + (mapping.header ? 1 : 0);
+  return mapping.ys.filter((column) =>
+    grid.some((values, row) => row >= start && String(values[column] ?? '').trim() !== ''),
+  );
+}
+
 /** Keep draft cell locations intact, including skipped headers and blank separator rows. */
 export function pastedSpectrumIssues(grid: string[][], mapping: Mapping): PastedSpectrumIssue[] {
   if (mapping.kind !== 'wide') return [];
@@ -92,7 +105,7 @@ export function pastedSpectrumIssues(grid: string[][], mapping: Mapping): Pasted
   };
   for (const { values, row } of rows)
     if (numeric(values[mapping.x]) === null) add(row, mapping.x, '波长必须为有效数值，不能留空或包含单位');
-  for (const column of mapping.ys) {
+  for (const column of selectedIntensityColumns(grid, mapping)) {
     const wavelengths = new Map<number, number[]>();
     let invalidNumber = false;
     for (const { values, row } of rows) {
@@ -117,14 +130,16 @@ export function pastedSpectrumIssues(grid: string[][], mapping: Mapping): Pasted
 export function preparePastedSpectra(grid: string[][], mapping: Mapping, source: string) {
   const rows = trimPasteGrid(grid);
   if (!rows.length) throw new Error('请先在表格中粘贴或输入波长与荧光强度数据');
-  const issues = pastedSpectrumIssues(rows, mapping);
+  const columns = selectedIntensityColumns(rows, mapping);
+  const effective = { ...mapping, ys: columns };
+  const issues = pastedSpectrumIssues(rows, effective);
   if (issues.length) throw new Error(
     `有 ${issues.length} 处无效记录，请修正标红单元格后绘图：${[...new Set(issues.map((issue) => issue.reason))].join('；')}。`,
   );
-  const result = mappedImport({ name: source, sheets: [{ name: '原始数据表', rows }] }, 0, mapping);
+  const result = mappedImport({ name: source, sheets: [{ name: '原始数据表', rows }] }, 0, effective);
   if (result.skipped)
     throw new Error(
       `有 ${result.skipped} 个无效记录，请修正标红的波长或强度单元格后绘图；说明行可通过起始行跳过。`,
     );
-  return result;
+  return { ...result, columns };
 }

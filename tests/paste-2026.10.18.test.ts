@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { syncRawMapping } from '../src/domain/raw-spectra';
+import type { SheetMapping } from '../src/domain/types';
 import {
   emptyPasteGrid,
   pasteIntoGrid,
   preparePastedSpectra,
+  selectedIntensityColumns,
   suggestPasteMapping,
   trimPasteGrid,
   growPasteGrid,
@@ -66,6 +69,31 @@ describe('pasted raw spectra', () => {
         error,
       );
     }
+  });
+  it('treats every non-wavelength column as intensity until it is marked as metadata', () => {
+    const grid = [
+      ['nm', 'A', 'B', 'C'],
+      ['500', '1', '2', 'sample'],
+      ['510', '3', '4', ''],
+    ];
+    const mapping: SheetMapping = {
+      kind: 'wide',
+      start: 1,
+      header: true,
+      x: 0,
+      ys: [1],
+      name: 0,
+      concentration: 0,
+      unit: 'µM',
+    };
+    expect(syncRawMapping(grid, mapping).ys).toEqual([1, 2, 3]);
+    expect(syncRawMapping(grid, { ...mapping, meta: [2] }).ys).toEqual([1, 3]);
+    const empty = [
+      ['nm', 'A', 'B'],
+      ['500', '1', ''],
+      ['510', '2', ''],
+    ];
+    expect(selectedIntensityColumns(empty, { ...mapping, ys: [1, 2] })).toEqual([1]);
   });
   it('keeps empty rows aligned and rejects oversize pastes without mutating the draft', () => {
     const grid = emptyPasteGrid();
