@@ -9,6 +9,7 @@ import type {
   WorkbookTab,
 } from './types';
 import { asQuenchingInput, defaultRecognition, type RecognitionData } from './recognition-2026.10.27';
+import { syncRawMapping } from './raw-spectra';
 
 /**
  * Multi-sheet workbook model shared by the analysis table areas.
@@ -130,7 +131,8 @@ export function defaultRawMapping(unit = 'µmol/L'): SheetMapping {
     start: 1,
     header: false,
     x: 0,
-    ys: [1],
+    ys: [1, 2],
+    meta: [],
     name: 0,
     concentration: 0,
     unit,
@@ -138,7 +140,8 @@ export function defaultRawMapping(unit = 'µmol/L'): SheetMapping {
 }
 
 export function defaultRawSheet(unit = 'µmol/L'): RawSheetState {
-  return { grid: blankGrid(), mapping: defaultRawMapping(unit) };
+  const grid = blankGrid();
+  return { grid, mapping: syncRawMapping(grid, defaultRawMapping(unit)) };
 }
 
 /** Empty payload for a freshly created sheet of the given page. */
@@ -149,14 +152,16 @@ export function defaultPayload(
   switch (page) {
     case 'recognition':
       return { recognition: defaultRecognition() };
-    case 'raw':
+    case 'raw': {
+      const grid = blankGrid();
       return {
-        grid: blankGrid(),
-        mapping: defaultRawMapping(unit),
+        grid,
+        mapping: syncRawMapping(grid, defaultRawMapping(unit)),
         spectra: [],
         rawColumnSpectra: {},
         excitation: '',
       };
+    }
     case 'screening':
       return { objects: [], blankId: '', screenMode: 'ratio' };
     case 'calibration':
@@ -404,8 +409,6 @@ function normalizeRawSheet(
         row.length >= 3 &&
         row.every((value) => typeof value === 'string'),
     );
-  const mapping = normalizeRawMapping(input.mapping, unit);
-  if (gridOk && mapping === input.mapping) return input;
   let grid = input.grid;
   if (!gridOk) {
     const source = input.grid.map((row) =>
@@ -417,7 +420,8 @@ function normalizeRawSheet(
       Array.from({ length: width }, (_, column) => source[row]?.[column] ?? ''),
     );
   }
-  return { grid, mapping };
+  const mapping = syncRawMapping(grid, normalizeRawMapping(input.mapping, unit));
+  return gridOk && mapping === input.mapping ? input : { grid, mapping };
 }
 
 /**
@@ -461,15 +465,17 @@ export function capturePayload(w: WorkbookHost, page: WorkbookId): SheetPayload 
   switch (page) {
     case 'recognition':
       return { recognition: w.recognition ?? defaultRecognition() };
-    case 'raw':
+    case 'raw': {
+      const grid = w.rawSheet?.grid ?? blankGrid();
       return {
-        grid: w.rawSheet?.grid ?? blankGrid(),
+        grid,
         mapping: w.rawSheet?.mapping ?? defaultRawMapping(w.calUnit),
         spectra: w.spectra,
         rawSpectra: w.rawSpectra,
         rawColumnSpectra: w.rawColumnSpectra ?? {},
         excitation: w.excitation ?? '',
       };
+    }
     case 'screening':
       return { objects: w.objects, blankId: w.blankId, screenMode: w.screenMode };
     case 'calibration':

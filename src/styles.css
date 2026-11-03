@@ -14,17 +14,10 @@
   font-display: swap;
 }
 :root {
-  font-family:
-    Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    'PingFang SC',
-    'Microsoft YaHei',
-    sans-serif;
+  font-family: 'Perovskite Lab Serif', 'Perovskite Lab Song', serif;
   color: #263c37;
   background: #f5f7f7;
-  font-synthesis: none;
+  font-synthesis: weight;
   text-rendering: optimizeLegibility;
   font-size: 16px;
   font-weight: 400;
@@ -850,7 +843,7 @@ input[type='checkbox'] {
   margin-bottom: 9px;
 }
 .metric strong {
-  font-family: Arial, 'PingFang SC', sans-serif;
+  font-family: 'Perovskite Lab Serif', 'Perovskite Lab Song', serif;
   display: block;
   font-size: 1.4rem;
   font-weight: 500;
