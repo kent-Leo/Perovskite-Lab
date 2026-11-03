@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { Download, SlidersHorizontal, Image, FileCode2, FileText } from 'lucide-react';
 import { chartSVG } from '../domain/chart';
+import { SONG_FONT_FAMILY, SERIF_FONT_FAMILY } from '../domain/chart-fonts-2026.11.3';
 import { chartAxes, axisSides, axisNames, type AxisSide, type AxisStyle, type ChartStyle, type PlotData } from '../domain/types';
 import { exportChart } from '../services/export';
 import { useWorkspace } from '../state/workspace';
@@ -272,6 +273,8 @@ export function ChartPanel({
                 >
                   <option>Arial</option>
                   <option>Times New Roman</option>
+                  <option value={SONG_FONT_FAMILY}>宋体（Noto Serif SC）</option>
+                  <option value={SERIF_FONT_FAMILY}>Claude 风格衬线</option>
                   <option>Perovskite Lab Sans</option>
                 </select>
               </Field>
@@ -401,7 +404,7 @@ export function ChartPanel({
                 <p className="muted">样本顺序由完整响应矩阵的 Ward 树确定。</p>
               </> : <><div className="axis-editor">
                 <div className="axis-side-tabs" role="group" aria-label="选择坐标轴">
-                  {axisSides.filter((side) => !custom?.paper || side === 'bottom' || side === 'left').map((side) => (
+                  {axisSides.filter((side) => custom?.paper !== 'tree' || side === 'bottom' || side === 'left').map((side) => (
                     <button key={side} type="button" aria-pressed={axisSide === side}
                       className={axisSide === side ? 'selected' : ''} onClick={() => setAxisSide(side)}>
                       {axisNames[side]}

@@ -171,8 +171,7 @@ export function asQuenchingInput(d: RecognitionData): RecognitionData {
     const typography = { fontFamily: scores.fontFamily, fontSize: scores.fontSize,
       lineWidth: scores.lineWidth === 2.4 ? 1.1 : scores.lineWidth };
     d = { ...d, settings: { ...d.settings, paperStyleVersion: 1, styles: { ...d.settings.styles,
-      scores: { ...scores, ...typography, grid: false, legend: 'none', axes: { ...scores.axes,
-        top: { ...scores.axes?.top, visible: false }, right: { ...scores.axes?.right, visible: false } } },
+      scores: { ...scores, ...typography, grid: false, legend: 'none' },
       tree: { ...tree, ...typography, grid: false, legend: 'none',
         xLabel: tree.xLabel === '样本 / 离子 / 平行编号' ? 'Ward 合并高度' : tree.xLabel,
         yLabel: tree.yLabel === 'Ward 距离' ? '离子' : tree.yLabel },

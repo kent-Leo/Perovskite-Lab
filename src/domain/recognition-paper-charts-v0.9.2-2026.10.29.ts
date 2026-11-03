@@ -1,3 +1,4 @@
+import { chartFontFamily } from './chart-fonts-2026.11.3';
 import { chartSVG, escapeXML as esc } from './chart';
 import { fmt } from './math';
 import { ionColor, type RecognitionAnalysis, type RecognitionData } from './recognition-2026.10.27';
@@ -93,10 +94,9 @@ export function scorePlot(d: RecognitionData, a: RecognitionAnalysis): PlotData 
   })) };
 }
 export function scoreStyle(d: RecognitionData, a: RecognitionAnalysis, style: ChartStyle): ChartStyle {
-  const { pcX, pcY } = scoreAxes(d, a), axes = chartAxes(style);
+  const { pcX, pcY } = scoreAxes(d, a);
   const label = (value: string, pc: number) => `${value.replace(/PC\d+.*$/, '').trim()} PC${pc + 1} (${((a.pca?.explained[pc] ?? 0) * 100).toFixed(2)}%)`.trim();
   return { ...style, legend: 'none', grid: false,
-    axes: { ...style.axes, top: { ...axes.top, visible: false }, right: { ...axes.right, visible: false } },
     xLabel: label(style.xLabel, pcX), yLabel: label(style.yLabel, pcY) };
 }
 export function scoresSVG(d: RecognitionData, a: RecognitionAnalysis, baseStyle: ChartStyle): string {
@@ -166,7 +166,7 @@ export function horizontalHierarchySVG(d: RecognitionData, a: RecognitionAnalysi
   const H = Math.max(600, top + bottom + n * Math.max(28, fs * 2.4));
   const pw = W - left - Math.max(35, fs * 3), ph = H - top - bottom, step = ph / n, axisY = top + ph;
   const sx = (height: number) => left + height / scale * pw;
-  const out = [`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(style.title || '层次聚类树状图')}" font-family="${esc(style.fontFamily)}, Perovskite Lab Sans, sans-serif"><defs></defs><rect width="${W}" height="${H}" fill="#ffffff"/>`];
+  const out = [`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(style.title || '层次聚类树状图')}" font-family="${esc(chartFontFamily(style.fontFamily))}"><defs></defs><rect width="${W}" height="${H}" fill="#ffffff"/>`];
   const text = (x: number, y: number, value: string, anchor = 'start', size = fs, extra = '') =>
     out.push(`<text x="${x}" y="${y}" fill="${ink}" font-size="${size}" text-anchor="${anchor}" ${extra}>${esc(value)}</text>`);
   const line = (x: number, y: number, x2: number, y2: number, extra = '', width = style.lineWidth) =>

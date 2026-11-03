@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { APP_VERSION } from '../../src/version-v0.9.0-2026.10.27';
 
 const demo = '/worksheet-v0.2.0-2026.10.19.html';
 test.beforeEach(async ({ page }) => {
@@ -9,7 +10,7 @@ test.beforeEach(async ({ page }) => {
 test('displays version, edits data and restores derived results with undo/redo', async ({
   page,
 }) => {
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('v0.9.2');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(`v${APP_VERSION}`);
   await page.getByRole('textbox', { name: 'Sheet1 B1', exact: true }).fill('120');
   await expect(page.getByLabel('Sheet1 D1', { exact: true })).toHaveText('80');
   await page.getByRole('button', { name: '撤销工作表修改', exact: true }).click();

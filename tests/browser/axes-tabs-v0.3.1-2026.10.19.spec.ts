@@ -63,7 +63,7 @@ for (const [name, kind] of [['光谱工作台', 'spectra'], ['对象筛选', 'sc
     await navigate(page, name);
     await page.getByRole('button', { name: '坐标', exact: true }).click();
     const chart = page.getByTestId(`${kind}-chart`);
-    await expect(chart.locator('[data-axis]')).toHaveCount(2);
+    await expect(chart.locator('[data-axis]')).toHaveCount(4);
     for (const [side, chinese] of [['bottom', '下轴'], ['top', '上轴'], ['left', '左轴'], ['right', '右轴']] as const) {
       await page.getByRole('button', { name: chinese, exact: true }).click();
       await page.getByLabel(`显示${chinese}`, { exact: true }).check();
@@ -115,7 +115,7 @@ test('four axes export to SVG, PNG and PDF with versioned filenames', async ({ p
     const pending = page.waitForEvent('download');
     await page.getByRole('button', { name: format, exact: true }).click();
     const file = await pending;
-    expect(file.suggestedFilename()).toMatch(/-v0\.9\.2-\d{4}\.\d{1,2}\.\d{1,2}\./);
+    expect(file.suggestedFilename()).toMatch(/-v0\.9\.3-\d{4}\.\d{1,2}\.\d{1,2}\./);
     const path = info.outputPath(`四轴-v0.3.1-2026.10.19.${format.toLowerCase()}`);
     await file.saveAs(path);
     const bytes = await readFile(path);
@@ -144,7 +144,7 @@ test('old workspace settings/data survive upgrade and charts stay within the vie
   await page.reload();
   await expect(page.getByTestId('spectra-chart')).toContainText('旧版波长名称');
   await expect(page.getByTestId('spectra-chart')).toContainText('旧版实际样品');
-  await expect(page.getByTestId('spectra-chart').locator('[data-axis]')).toHaveCount(2);
+  await expect(page.getByTestId('spectra-chart').locator('[data-axis]')).toHaveCount(4);
   await page.setViewportSize({ width: 390, height: 844 });
   for (const [name] of pages) {
     await page.goto(`/#${{ '光谱工作台': 'spectra', '对象筛选': 'screening', '校准与检出限': 'calibration', '浓度梯度': 'gradient' }[name]}`);
@@ -165,6 +165,7 @@ test('inward/outward ticks point correctly on each edge and zero length hides on
   for (const [side, label, sign] of [['top', '上轴', -1], ['bottom', '下轴', 1], ['left', '左轴', -1], ['right', '右轴', 1]] as const) {
     await page.getByRole('button', { name: label, exact: true }).click();
     await page.getByLabel(`显示${label}`, { exact: true }).check();
+    await page.getByLabel(`显示${label}刻度标签`, { exact: true }).check();
     await page.getByLabel(`${label}刻度长度`, { exact: true }).fill('8');
     for (const direction of ['out', 'in'] as const) {
       await page.getByLabel(`${label}刻度线`, { exact: true }).selectOption(direction);

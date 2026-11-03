@@ -1,4 +1,5 @@
 import { inferMapping, mappedImport, readTextTable, type Mapping } from './import';
+import { numeric } from '../domain/math';
 
 export const PASTE_LIMITS = { rows: 100001, columns: 64, cells: 500000, bytes: 20 * 1024 * 1024 };
 export const emptyPasteGrid = () => Array.from({ length: 6 }, () => ['', '', '']);
@@ -76,9 +77,50 @@ export function suggestPasteMapping(grid: string[][], unit: string): Mapping {
   return { ...mapping, ys: ys.length ? ys : [mapping.x === 0 ? 1 : 0] };
 }
 
+export interface PastedSpectrumIssue { row: number; column: number; reason: string }
+
+/** Keep draft cell locations intact, including skipped headers and blank separator rows. */
+export function pastedSpectrumIssues(grid: string[][], mapping: Mapping): PastedSpectrumIssue[] {
+  if (mapping.kind !== 'wide') return [];
+  const start = mapping.start - 1 + (mapping.header ? 1 : 0);
+  const rows = grid.map((values, row) => ({ values, row }))
+    .filter(({ values, row }) => row >= start && values.some((v) => v.trim()));
+  const issues = new Map<string, PastedSpectrumIssue>();
+  const add = (row: number, column: number, reason: string) => {
+    const key = `${row}:${column}`;
+    if (!issues.has(key)) issues.set(key, { row, column, reason });
+  };
+  for (const { values, row } of rows)
+    if (numeric(values[mapping.x]) === null) add(row, mapping.x, '波长必须为有效数值，不能留空或包含单位');
+  for (const column of mapping.ys) {
+    const wavelengths = new Map<number, number[]>();
+    let invalidNumber = false;
+    for (const { values, row } of rows) {
+      if (mapping.allowEmptyIntensity && !values[column]?.trim()) continue;
+      const x = numeric(values[mapping.x]), y = numeric(values[column]);
+      if (y === null) add(row, column, '强度必须为有效数值，不能留空或包含单位');
+      if (x === null || y === null) { invalidNumber = true; continue; }
+      const matches = wavelengths.get(x) ?? [];
+      matches.push(row);
+      wavelengths.set(x, matches);
+    }
+    for (const matches of wavelengths.values())
+      if (matches.length > 1) for (const row of matches)
+        add(row, mapping.x, '存在重复波长；请分开重复测量或先处理重复值');
+    const count = [...wavelengths.values()].reduce((sum, matches) => sum + matches.length, 0);
+    if (!invalidNumber && count < 2) for (const { row } of rows)
+      add(row, column, '该光谱的有效点少于 2，请补充波长与强度数据');
+  }
+  return [...issues.values()];
+}
+
 export function preparePastedSpectra(grid: string[][], mapping: Mapping, source: string) {
   const rows = trimPasteGrid(grid);
   if (!rows.length) throw new Error('请先在表格中粘贴或输入波长与荧光强度数据');
+  const issues = pastedSpectrumIssues(rows, mapping);
+  if (issues.length) throw new Error(
+    `有 ${issues.length} 处无效记录，请修正标红单元格后绘图：${[...new Set(issues.map((issue) => issue.reason))].join('；')}。`,
+  );
   const result = mappedImport({ name: source, sheets: [{ name: '原始数据表', rows }] }, 0, mapping);
   if (result.skipped)
     throw new Error(

@@ -1,48 +1,60 @@
 import type { ChartStyle } from '../domain/types';
+import type { PDFFont } from 'pdf-lib';
+import { exportFonts } from '../domain/chart-fonts-2026.11.3';
 import { downloadBlob, filename } from './download';
-let svgFontData: Promise<string> | undefined;
-// Font family used only to warm the browser font cache before rasterizing a PNG.
-const RASTER_FONT_FAMILY = 'Perovskite Lab Export Sans';
-let rasterFont: Promise<void> | undefined;
-async function portableSVG(svg: string) {
-  if (!/[^\x00-\x7f]/.test(svg) && !svg.includes('font-family="Perovskite Lab Sans')) return { svg };
-  svgFontData ??= fetch(`${import.meta.env.BASE_URL}fonts/PerovskiteLabSans-Regular.woff`).then(
-    async (r) => {
-      if (!r.ok) throw new Error('导出字体读取失败');
-      const blob = new Blob([await r.arrayBuffer()], { type: 'font/woff' });
-      return new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => reject(new Error('字体编码失败'));
-        reader.readAsDataURL(blob);
-      });
-    },
-  );
-  const font = await svgFontData;
+const svgFontData = new Map<string, Promise<string>>();
+const rasterFonts = new Map<string, Promise<void>>();
+async function embeddedFontData({ family, file }: { family: string; file: string }) {
+  let pending = svgFontData.get(family);
+  if (!pending) {
+    pending = fetch(`${import.meta.env.BASE_URL}fonts/${file}.woff`).then(
+      async (r) => {
+        if (!r.ok) throw new Error('导出字体读取失败');
+        const blob = new Blob([await r.arrayBuffer()], { type: 'font/woff' });
+        return new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result));
+          reader.onerror = () => reject(new Error('字体编码失败'));
+          reader.readAsDataURL(blob);
+        });
+      },
+    ).catch((error) => { svgFontData.delete(family); throw error; });
+    svgFontData.set(family, pending);
+  }
+  return { family, font: await pending };
+}
+async function portableSVG(svg: string, fontFamily: string) {
+  const selected = exportFonts(fontFamily);
+  if (!fontFamily.startsWith('Perovskite Lab ') && !/[^\x00-\x7f]/.test(svg)) return { svg, fonts: [] };
+  const fonts = await Promise.all(selected.map(embeddedFontData));
   return {
     svg: svg.replace(
       '<defs>',
-      `<defs><style>@font-face{font-family:'Perovskite Lab Sans';src:url('${font}') format('woff')}</style>`,
+      `<defs><style>${fonts.map(({ family, font }) => `@font-face{font-family:'${family}';src:url('${font}') format('woff')}`).join('')}</style>`,
     ),
-    font,
+    fonts,
   };
 }
 // Chromium snapshots an SVG loaded through <img> before its data-URI @font-face
 // finishes loading, so the first PNG of a page loses every glyph that needs the
 // embedded font (chart title, Chinese legend labels). Loading the very same font
 // data in the page first makes the image use the cached font on its first paint.
-function warmRasterFont(font: string) {
-  rasterFont ??= (async () => {
-    try {
-      const face = new FontFace(RASTER_FONT_FAMILY, `url('${font}') format('woff')`);
-      await face.load();
-      document.fonts.add(face);
-    } catch {
-      // Keep the extra animation frame below as the fallback for browsers that
-      // cannot preload the export font.
-    }
-  })();
-  return rasterFont;
+function warmRasterFont(family: string, font: string) {
+  let pending = rasterFonts.get(family);
+  if (!pending) {
+    pending = (async () => {
+      try {
+        const face = new FontFace(`${family} Export`, `url('${font}') format('woff')`);
+        await face.load();
+        document.fonts.add(face);
+      } catch {
+        // Keep the extra animation frame below as the fallback for browsers that
+        // cannot preload the export font.
+      }
+    })();
+    rasterFonts.set(family, pending);
+  }
+  return pending;
 }
 // Wait for the raster to settle. requestAnimationFrame stops firing in hidden
 // tabs, so fall back to a timer instead of hanging the export forever.
@@ -93,11 +105,11 @@ export async function exportChart(
   style: ChartStyle,
   name: string,
 ) {
-  let embeddedFont: string | undefined;
+  let embeddedFonts: { family: string; font: string }[] = [];
   if (format !== 'pdf') {
-    const portable = await portableSVG(svg);
+    const portable = await portableSVG(svg, style.fontFamily);
     svg = portable.svg;
-    embeddedFont = portable.font;
+    embeddedFonts = portable.fonts;
   }
   if (format === 'svg') {
     downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), filename(name, 'svg'));
@@ -108,7 +120,7 @@ export async function exportChart(
     W = Number(root.getAttribute('width')),
     H = Number(root.getAttribute('height'));
   if (format === 'png') {
-    if (embeddedFont) await warmRasterFont(embeddedFont);
+    await Promise.all(embeddedFonts.map(({ family, font }) => warmRasterFont(family, font)));
     await document.fonts.ready;
     const img = new Image(),
       url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
@@ -139,11 +151,28 @@ export async function exportChart(
     return;
   }
   const [pdf, fontkit] = await Promise.all([import('pdf-lib'), import('@pdf-lib/fontkit')]);
-  const fontRes = await fetch(`${import.meta.env.BASE_URL}fonts/PerovskiteLabSans-Regular.ttf`);
-  if (!fontRes.ok) throw new Error('PDF 字体读取失败，请通过本地服务器打开网页');
+  const fontBytes = await Promise.all(exportFonts(style.fontFamily).map(async ({ file }) => {
+    const response = await fetch(`${import.meta.env.BASE_URL}fonts/${file}.ttf`);
+    if (!response.ok) throw new Error('PDF 字体读取失败，请通过本地服务器打开网页');
+    return response.arrayBuffer();
+  }));
   const documentPDF = await pdf.PDFDocument.create();
   documentPDF.registerFontkit(fontkit.default);
-  const font = await documentPDF.embedFont(await fontRes.arrayBuffer(), { subset: false });
+  const fonts: { font: PDFFont; characters: Set<number> }[] = [];
+  for (const bytes of fontBytes) {
+    const font = await documentPDF.embedFont(bytes, { subset: false });
+    fonts.push({ font, characters: new Set(font.getCharacterSet()) });
+  }
+  const textRuns = (content: string) => {
+    const runs: { font: PDFFont; text: string }[] = [];
+    for (const character of content) {
+      const { font } = fonts.find(({ characters }) => characters.has(character.codePointAt(0)!)) ?? fonts[fonts.length - 1];
+      const last = runs.at(-1);
+      if (last?.font === font) last.text += character;
+      else runs.push({ font, text: character });
+    }
+    return runs;
+  };
   const scale = ((style.widthCm / 2.54) * 72) / W,
     page = documentPDF.addPage([W * scale, H * scale]);
   const num = (el: Element, a: string, d = 0) => Number(el.getAttribute(a) ?? d);
@@ -224,18 +253,23 @@ export async function exportChart(
       const content = el.textContent ?? '',
         size = num(el, 'font-size', 16) * scale,
         anchor = el.getAttribute('text-anchor'),
-        width = font.widthOfTextAtSize(content, size),
+        runs = textRuns(content),
+        width = runs.reduce((sum, run) => sum + run.font.widthOfTextAtSize(run.text, size), 0),
         offset = anchor === 'middle' ? width / 2 : anchor === 'end' ? width : 0;
       const angle = Number(el.getAttribute('transform')?.match(/rotate\(([-\d.]+)/)?.[1] ?? 0),
         r = (-angle * Math.PI) / 180;
-      page.drawText(content, {
-        font,
-        size,
-        x: num(el, 'x') * scale - offset * Math.cos(r),
-        y: (H - num(el, 'y')) * scale - offset * Math.sin(r),
-        color: color(el.getAttribute('fill')),
-        rotate: pdf.degrees(-angle),
-      });
+      let advance = -offset;
+      for (const run of runs) {
+        page.drawText(run.text, {
+          font: run.font,
+          size,
+          x: num(el, 'x') * scale + advance * Math.cos(r),
+          y: (H - num(el, 'y')) * scale + advance * Math.sin(r),
+          color: color(el.getAttribute('fill')),
+          rotate: pdf.degrees(-angle),
+        });
+        advance += run.font.widthOfTextAtSize(run.text, size);
+      }
     }
     for (const child of el.children) draw(child);
     if (clipped) page.pushOperators(pdf.popGraphicsState());

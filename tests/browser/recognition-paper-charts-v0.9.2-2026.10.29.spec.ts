@@ -2,7 +2,7 @@ import { test, expect, type Locator, type Page } from '@playwright/test';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-const evidence = path.resolve('docs/验收-多探针图表-v0.9.2-2026.10.29');
+const evidence = path.resolve(process.env.LAB_EVIDENCE_DIR || 'docs/验收-多探针图表-v0.9.2-2026.10.29');
 mkdirSync(evidence, { recursive: true });
 const moduleOf = (page: Page) => page.getByTestId('recognition-module');
 const scores = (page: Page) => page.getByTestId('recognition-scores-chart');
@@ -48,7 +48,9 @@ test('paper PCA uses one chemical label per ion and keeps all true scores across
   await demo(page);
   const root = scores(page), m = moduleOf(page);
   await expect(root.locator('[data-ion-label]')).toHaveCount(3);
-  await expect(root.locator('[data-legend], [data-axis="top"], [data-axis="right"], [data-sample-label]')).toHaveCount(0);
+  await expect(root.locator('[data-legend], [data-sample-label]')).toHaveCount(0);
+  await expect(root.locator('[data-axis]')).toHaveCount(4);
+  await expect(root.locator('[data-axis="top"] text, [data-axis="right"] text')).toHaveCount(0);
   await expect(root.locator('[data-ion-label="CO₃²⁻"] tspan[baseline-shift="sub"]')).toHaveText('3');
   await expect(root.locator('[data-ion-label="CO₃²⁻"] tspan[baseline-shift="super"]')).toHaveText('2−');
   const metadata = await root.locator('[data-point] title').allTextContents();
@@ -166,7 +168,7 @@ test('SVG geometry equals the preview and PNG pixels equal the exported SVG rast
       const event = page.waitForEvent('download');
       await panel.getByRole('button', { name: format, exact: true }).click();
       const download = await event, file = path.join(evidence, download.suggestedFilename());
-      expect(download.suggestedFilename()).toMatch(/v0\.9\.2-\d{4}\.\d{1,2}\.\d{1,2}\./);
+      expect(download.suggestedFilename()).toMatch(/v0\.9\.3-\d{4}\.\d{1,2}\.\d{1,2}\./);
       await download.saveAs(file); downloads[format] = readFileSync(file);
     }
     const result = await page.evaluate(async ({ preview, exported, png }) => {

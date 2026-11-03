@@ -1,3 +1,4 @@
+import { chartFontFamily } from './chart-fonts-2026.11.3';
 import { fmt, numeric } from './math';
 import { chartAxes, axisSides, type AxisSide, type ChartStyle, type PlotData } from './types';
 export const escapeXML = (s: string) =>
@@ -107,7 +108,7 @@ export function chartSVG(data: PlotData, style: ChartStyle, overlay?: ChartOverl
     out.push(`<text x="${x}" y="${y}" fill="${fg}" font-size="${size}" text-anchor="${anchor}" ${extra}>${escapeXML(s)}</text>`);
   const line = (x1: number, y1: number, x2: number, y2: number, color = fg, width = 1.1, dashed = false) =>
     out.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${width}"${dashed ? ' stroke-dasharray="7 5"' : ''}/>`);
-  out.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeXML(style.title || '科研图表')}" font-family="${escapeXML(style.fontFamily)}, Perovskite Lab Sans, sans-serif"><rect width="${W}" height="${H}" fill="#ffffff"/><defs><clipPath id="plot-clip"><rect x="${left}" y="${top}" width="${pw}" height="${ph}"/></clipPath></defs>`);
+  out.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeXML(style.title || '科研图表')}" font-family="${escapeXML(chartFontFamily(style.fontFamily))}"><rect width="${W}" height="${H}" fill="#ffffff"/><defs><clipPath id="plot-clip"><rect x="${left}" y="${top}" width="${pw}" height="${ph}"/></clipPath></defs>`);
   if (style.title) text(W / 2, fs + 12, style.title, 'middle', fs + 5);
   if (style.grid) {
     for (const { value } of ticksFor('left')) line(left, sy(value), left + pw, sy(value), '#e5ebe9', 0.8);

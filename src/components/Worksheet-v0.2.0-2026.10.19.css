@@ -233,7 +233,7 @@
 .worksheet td.is-readonly.is-selected {
   background: #e6edf6;
 }
-.worksheet td > input[aria-invalid='true'] {
+.worksheet td[role='gridcell'][aria-invalid='true'] {
   background: #fff0ee;
   color: #aa493c;
 }
