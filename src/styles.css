@@ -3,6 +3,16 @@
   src: url('/fonts/PerovskiteLabSans-Regular.woff') format('woff');
   font-display: swap;
 }
+@font-face {
+  font-family: 'Perovskite Lab Song';
+  src: url('/fonts/PerovskiteLabSong-Regular-2026.11.3.woff') format('woff');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Perovskite Lab Serif';
+  src: url('/fonts/PerovskiteLabSerif-Regular-2026.11.3.woff') format('woff');
+  font-display: swap;
+}
 :root {
   font-family:
     Inter,

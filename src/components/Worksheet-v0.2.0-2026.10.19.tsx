@@ -791,6 +791,7 @@ export function Worksheet({
                         tabIndex={readOnly ? 0 : -1}
                         aria-selected={cellInSelection(at, selection)}
                         aria-readonly={readOnly || undefined}
+                        aria-invalid={invalid || undefined}
                         data-cell={`${r}:${c}`}
                         className={`${cellInSelection(at, selection) ? 'is-selected' : ''} ${focus.row === r && focus.column === c ? (editing ? 'is-active is-editing' : 'is-active') : ''} ${readOnly ? 'is-readonly' : ''}`}
                         onPointerDown={(e) => {

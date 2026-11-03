@@ -35,7 +35,7 @@ describe('paper recognition charts', () => {
     expect(svg.match(/data-point="true"/g)).toHaveLength(d.rows.length);
     expect(svg.match(/data-ion-label=/g)).toHaveLength(3);
     expect(svg).not.toContain('data-sample-label'); expect(svg).not.toContain('data-legend');
-    expect(svg).not.toContain('data-axis="top"'); expect(svg).not.toContain('data-axis="right"');
+    expect(svg).toContain('data-axis="top"'); expect(svg).toContain('data-axis="right"');
     expect(svg).not.toContain('#e5ebe9');
     expect(svg).toContain('PC1 (67.45%)'); expect(svg).toContain('PC2 (32.51%)');
     d.rows.forEach((row, i) => expect(scorePlot(d, a).series.flatMap((s) => s.points))
@@ -127,7 +127,7 @@ describe('paper recognition charts', () => {
 
   it('uses the branch release in the package, current app and worksheet entry points', () => {
     const packageData = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-    expect(APP_VERSION).toBe('0.9.2'); expect(packageData.version).toBe(APP_VERSION);
+    expect(APP_VERSION).toBe('0.9.3'); expect(packageData.version).toBe(APP_VERSION);
     for (const file of ['../index.html', '../worksheet-v0.2.0-2026.10.19.html'])
       expect(readFileSync(new URL(file, import.meta.url), 'utf8')).toContain(`v${APP_VERSION}`);
   });

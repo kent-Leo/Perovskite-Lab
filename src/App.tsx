@@ -103,7 +103,7 @@ export default function App() {
     if (!w.demo && !window.confirm('载入示例将替换当前工作区数据。请先导出需要保留的数据。'))
       return;
     update(demoWorkspace());
-    notify('已载入人工生成的示例数据');
+    notify('已载入示例数据');
   }
   function clearWorkspace() {
     if (!window.confirm('清空当前工作区？已下载的文件不会受影响。')) return;
@@ -263,7 +263,7 @@ export default function App() {
               {showingDemo ? <FlaskConical size={16} /> : <Check size={16} />}
               <span>
                 {showingDemo
-                  ? '示例工作区 · 当前数据为人工生成，仅用于体验功能'
+                  ? '示例工作区 · 仅用于体验功能'
                   : '当前工作区 · 自动保存在此浏览器'}
               </span>
             </div>

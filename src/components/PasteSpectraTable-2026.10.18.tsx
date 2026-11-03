@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ClipboardPaste, Plus, ArrowDownToLine, Trash2 } from 'lucide-react';
 import { useWorkspace } from '../state/workspace';
 import { useWorkbook } from '../state/useWorkbook';
-import { numeric } from '../domain/math';
 import { palette, type ColumnMetadata } from '../domain/types';
 import { blankGrid, defaultRawMapping, defaultRawSheet } from '../domain/workbook';
 import { insertRawSheetColumn, insertRawSheetRow } from '../domain/raw-sheet-edit';
@@ -16,6 +15,7 @@ import { dateStamp } from '../services/download';
 import {
   growPasteGrid,
   pasteIntoGrid,
+  pastedSpectrumIssues,
   preparePastedSpectra,
   suggestPasteMapping,
   trimPasteGrid,
@@ -40,6 +40,9 @@ export function PasteSpectraTable() {
   const grid = sheet.grid,
     mapping: Mapping = sheet.mapping;
   const rows = useMemo(() => trimPasteGrid(grid), [grid]);
+  const invalidCells = useMemo(() => new Set(
+    pastedSpectrumIssues(grid, mapping).map(({ row, column }) => `${row}:${column}`),
+  ), [grid, mapping]);
   const columns = Array.from({ length: grid[0]?.length ?? 0 }, (_, i) => i);
   const rawMetadata = w.sheetMetadata?.[wb.activeId] ?? {};
   const metaAt = (column: number): ColumnMetadata => rawMetadata[rawColumnKey(column)] ?? {};
@@ -390,13 +393,7 @@ export function PasteSpectraTable() {
         onInsertRow={insertRow}
         onInsertColumn={insertColumn}
         cellLabel={(row, col) => `原始数据第 ${row + 1} 行第 ${col + 1} 列`}
-        invalidCell={(row, col) =>
-          row >= mapping.start - 1 + (mapping.header ? 1 : 0) &&
-          !!grid[row]?.some((v) => v.trim()) &&
-          (col === mapping.x || mapping.ys.includes(col)) &&
-          numeric(grid[row]?.[col]) === null &&
-          !(mapping.allowEmptyIntensity && col !== mapping.x && !grid[row]?.[col]?.trim())
-        }
+        invalidCell={(row, col) => invalidCells.has(`${row}:${col}`)}
       />
       {(error || result.error) && <ErrorNote>{error || result.error}</ErrorNote>}
       <div className="paste-footer">

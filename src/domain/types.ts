@@ -77,11 +77,13 @@ export const axisSides: AxisSide[] = ['bottom', 'top', 'left', 'right'];
 export const axisNames: Record<AxisSide, string> = {
   bottom: '下轴', top: '上轴', left: '左轴', right: '右轴',
 };
-// Older workspaces have no axes field; retain their bottom/left appearance.
+// Missing settings use the current defaults; explicit per-axis choices take precedence.
 export function chartAxes(style: ChartStyle): Record<AxisSide, AxisStyle> {
   return Object.fromEntries(axisSides.map((side) => [side, {
-    visible: side === 'bottom' || side === 'left',
-    tickLabels: true, ticks: 'out', tickLength: 5, tickWidth: 1.1, divisions: 5,
+    visible: true,
+    tickLabels: side === 'bottom' || side === 'left',
+    ticks: side === 'bottom' || side === 'left' ? 'in' : 'none',
+    tickLength: 5, tickWidth: 1.1, divisions: 5,
     ...style.axes?.[side],
     // Persisted partial axes may omit their title; blank titles remain valid.
     label: (side === 'bottom' ? style.xLabel : side === 'left' ? style.yLabel : style.axes?.[side]?.label) ?? '',

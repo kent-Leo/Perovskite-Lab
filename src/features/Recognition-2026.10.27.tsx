@@ -164,7 +164,7 @@ export function Recognition() {
             setBusy(true); try { await recognitionExcel(d, a); notify('完整分析工作簿已导出'); }
             catch (e) { notify((e as Error).message); } finally { setBusy(false); }
           }}><Download size={15} />{busy ? '导出中…' : '导出分析 Excel'}</button></div>} />
-      {d.demo && <p className="recognition-demo">演示数据 · 人工生成，仅用于验证操作流程。</p>}
+      {d.demo && <p className="recognition-demo">演示数据 · 仅用于验证操作流程。</p>}
       <p className="muted">直接输入 q（如 0.74）或百分数（如 74%）；Q = q × 100%。负值表示荧光增强，0 表示无变化。</p>
       {d.intensitySource && <p className="muted">旧强度数据已换算为猝灭率；原始强度与空白批次已保留，可随分析 Excel 一并导出。</p>}
       {snapshot ? <div className="recognition-snapshot" role="status">
