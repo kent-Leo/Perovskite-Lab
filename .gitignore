@@ -1,5 +1,7 @@
 node_modules/
 dist/
+dist-electron/
+release/
 test-results/
 playwright-report/
 .DS_Store

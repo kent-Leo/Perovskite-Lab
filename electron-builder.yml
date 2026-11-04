@@ -1,0 +1,56 @@
+appId: com.perovskitelab.app
+productName: Perovskite Lab
+copyright: Copyright © 2026 Perovskite Lab
+directories:
+  output: release
+  buildResources: build
+# 只打包渲染层产物与主进程 bundle，生产依赖已被 esbuild 内联，无需 node_modules
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+  - '!node_modules/**/*'
+afterPack: electron/after-pack-2026.11.4.cjs
+asar: true
+# 双击 .plab 项目文件即可用本应用打开（macOS 文档类型 / Windows 注册表关联）
+fileAssociations:
+  - ext: plab
+    name: Perovskite Lab Project
+    description: Perovskite Lab 项目文件
+    role: Editor
+    mimeType: application/json
+mac:
+  category: public.app-category.education
+  # 先用免签名 + ad-hoc 签名跑通；拿到 Developer ID 后删除此行并配置
+  # CSC_LINK / CSC_NAME / APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID
+  identity: null
+  gatekeeperAssess: false
+  target:
+    - target: dmg
+    - target: zip
+  artifactName: PerovskiteLab-${version}-${arch}.${ext}
+dmg:
+  title: ${productName} ${version}
+  contents:
+    - x: 150
+      y: 190
+      type: file
+    - x: 400
+      y: 190
+      type: link
+      path: /Applications
+win:
+  # 未配置证书时不签名，用户首次运行需点「更多信息 → 仍要运行」
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: PerovskiteLab-${version}-${arch}-setup.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Perovskite Lab
+  deleteAppDataOnUninstall: false

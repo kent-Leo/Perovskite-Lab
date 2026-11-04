@@ -3,30 +3,45 @@
   "version": "0.9.4",
   "private": true,
   "type": "module",
+  "description": "Perovskite Lab 荧光光谱与检测数据分析工作台",
+  "author": "Perovskite Lab",
+  "main": "dist-electron/main.cjs",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
+    "build:main": "esbuild electron/main-2026.11.4.ts --bundle --platform=node --format=cjs --target=node22 --minify --external:electron --outfile=dist-electron/main.cjs && esbuild electron/preload-2026.11.4.ts --bundle --platform=node --format=cjs --target=node22 --minify --external:electron --outfile=dist-electron/preload.cjs",
+    "build:app": "npm run build && npm run build:main",
+    "app:dev": "npm run build:app && electron .",
+    "dist:mac": "npm run build:app && electron-builder --mac",
+    "dist:win": "npm run build:app && electron-builder --win",
+    "dist": "npm run build:app && electron-builder --mac --win",
+    "clean:app": "rm -rf dist-electron release",
     "test": "vitest run",
+    "test:desktop": "node tests/desktop/smoke-electron-2026.11.4.mjs",
     "test:browser": "playwright test"
   },
   "dependencies": {
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
+    "@pdf-lib/fontkit": "^1.1.1",
     "lucide-react": "^0.468.0",
     "papaparse": "^5.5.3",
-    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "pdf-lib": "^1.17.1",
-    "@pdf-lib/fontkit": "^1.1.1"
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
-    "typescript": "^5.9.2",
-    "vite": "^7.1.0",
-    "@vitejs/plugin-react": "^5.0.0",
+    "@playwright/test": "^1.55.0",
+    "@types/node": "^26.6.6",
+    "@types/papaparse": "^5.3.16",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
-    "@types/papaparse": "^5.3.16",
-    "vitest": "^3.2.4",
-    "@playwright/test": "^1.55.0"
+    "@vitejs/plugin-react": "^5.0.0",
+    "electron": "^45.2.1",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.0",
+    "vitest": "^3.2.4"
   }
 }

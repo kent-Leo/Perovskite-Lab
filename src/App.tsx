@@ -31,6 +31,11 @@ import { ImportDialog } from './components/ImportDialog';
 import { PasteSpectraTable } from './components/PasteSpectraTable-2026.10.18';
 import { ErrorNote } from './components/ui';
 import { dateStamp, downloadBlob, filename } from './services/download';
+import {
+  desktopProject,
+  parseProject,
+  serializeProject,
+} from './services/desktop-project-2026.11.4';
 import type { ImportKind } from './services/import';
 import { useLabTools } from './services/useLabTools';
 const pages = [
@@ -84,6 +89,64 @@ export default function App() {
     [importKind, setImportKind] = useState<ImportKind>('wide'),
     [mobileOpen, setMobileOpen] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  // 桌面端：项目文件读写。浏览器里 desktopProject 为 undefined，所有分支都会跳过。
+  const latestWorkspace = useRef(w);
+  latestWorkspace.current = w;
+
+  const applyProjectText = useCallback(
+    (content: string) => {
+      const parsed = (() => {
+        try {
+          return parseProject(content);
+        } catch (error) {
+          notify(`打开失败：${(error as Error).message}`);
+          return null;
+        }
+      })();
+      if (!parsed) return;
+      if (
+        (latestWorkspace.current.spectra.length || latestWorkspace.current.objects.length) &&
+        !window.confirm('打开项目会替换当前工作区数据，确定继续？已保存到磁盘的文件不受影响。')
+      )
+        return;
+      update(() => parsed.workspace);
+      notify(parsed.legacyBackup ? '已从备份 JSON 恢复工作区' : '项目已打开，可继续编辑');
+    },
+    [notify, update],
+  );
+
+  const saveProjectFile = useCallback(
+    async (saveAs: boolean) => {
+      if (!desktopProject) return;
+      const result = await desktopProject.save(serializeProject(latestWorkspace.current), saveAs);
+      if (result.canceled) {
+        if (result.error) notify(result.error);
+        return;
+      }
+      notify(`项目已保存：${result.path?.split(/[\\/]/).pop() ?? '项目文件'}`);
+    },
+    [notify],
+  );
+
+  const openProjectFile = useCallback(async () => {
+    if (!desktopProject) return;
+    const result = await desktopProject.open();
+    if (result.canceled) {
+      if (result.error) notify(result.error);
+      return;
+    }
+    if (result.content) applyProjectText(result.content);
+  }, [applyProjectText, notify]);
+
+  useEffect(() => {
+    if (!desktopProject) return;
+    desktopProject.setCommandHandler((command) => {
+      if (command.type === 'loaded') applyProjectText(command.content);
+      else if (command.type === 'open') void openProjectFile();
+      else void saveProjectFile(command.type === 'save-as');
+    });
+    return () => desktopProject?.setCommandHandler(null);
+  }, [applyProjectText, openProjectFile, saveProjectFile]);
   useEffect(() => {
     const handler = () => setPage(currentPage());
     window.addEventListener('hashchange', handler);
@@ -264,10 +327,18 @@ export default function App() {
               <span>
                 {showingDemo
                   ? '示例工作区 · 仅用于体验功能'
-                  : '当前工作区 · 自动保存在此浏览器'}
+                  : desktopProject
+                    ? '当前工作区 · 自动保存在本机'
+                    : '当前工作区 · 自动保存在此浏览器'}
               </span>
             </div>
             <div className="status-actions">
+              {desktopProject && (
+                <>
+                  <button onClick={() => void saveProjectFile(false)}>保存项目</button>
+                  <button onClick={() => void openProjectFile()}>打开项目</button>
+                </>
+              )}
               <button onClick={clearWorkspace}>新建空白工作区</button>
               <button
                 onClick={() => {
