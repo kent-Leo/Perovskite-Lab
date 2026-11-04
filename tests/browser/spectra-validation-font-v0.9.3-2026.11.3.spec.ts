@@ -100,7 +100,7 @@ test('Song font persists, embeds in SVG and PDF, and renders the same PNG after 
     const pending = page.waitForEvent('download');
     await page.getByRole('button', { name: format, exact: true }).click();
     const result = await pending;
-    expect(result.suggestedFilename()).toMatch(/-v0\.9\.4-\d{4}\.\d{1,2}\.\d{1,2}\./);
+    expect(result.suggestedFilename()).toMatch(/-v0\.9\.5-\d{4}\.\d{1,2}\.\d{1,2}\./);
     const file = info.outputPath(`${stem}-2026.11.3.${format.toLowerCase()}`);
     await result.saveAs(file);
     return readFileSync(file);

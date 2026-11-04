@@ -85,6 +85,38 @@ try {
   if (onDisk !== content) fail('项目文件落盘内容与工作区不一致');
   if (reopened.canceled || reopened.content !== content) fail('重新打开项目文件内容不一致');
 
+  // —— 模拟双击 .plab 启动：命令行带文件，页面就绪后主进程推送 loaded 指令 ——
+  // 这条路径以前会丢指令（渲染进程还没注册 handler），Windows 上表现为打开即空白。
+  const appWithFile = await electron.launch({
+    executablePath,
+    args: [`--user-data-dir=${userDataDir}-import`, projectFile],
+  });
+  try {
+    const win2 = await appWithFile.firstWindow({ timeout: 30000 });
+    win2.on('dialog', (dialog) => void dialog.accept());
+    await win2.waitForLoadState('domcontentloaded');
+    await win2.waitForFunction(
+      () => Boolean(localStorage.getItem('perovskite-lab-workspace-v1')),
+      null,
+      { timeout: 20000 },
+    );
+    const applied = await win2.evaluate(() =>
+      JSON.parse(localStorage.getItem('perovskite-lab-workspace-v1') ?? 'null'),
+    );
+    const expected = JSON.parse(content);
+    const sameShape =
+      applied?.version === expected?.version &&
+      Array.isArray(applied?.spectra) &&
+      applied.spectra.length === expected.spectra.length &&
+      applied.spectra[0]?.name === expected.spectra[0]?.name &&
+      Array.isArray(applied?.objects) &&
+      applied.objects.length === expected.objects.length;
+    console.log(`  双击打开 ${sameShape ? 'ok' : 'FAILED'}（${applied?.spectra?.length ?? 0} 条光谱）`);
+    if (!sameShape) fail('双击 .plab 启动后工作区没有载入');
+  } finally {
+    await appWithFile.close();
+  }
+
   if (!process.exitCode) console.log('✓ 桌面端冒烟测试通过');
 } finally {
   await app.close();

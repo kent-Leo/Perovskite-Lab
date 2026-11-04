@@ -127,7 +127,7 @@ describe('paper recognition charts', () => {
 
   it('uses the branch release in the package, current app and worksheet entry points', () => {
     const packageData = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-    expect(APP_VERSION).toBe('0.9.4'); expect(packageData.version).toBe(APP_VERSION);
+    expect(APP_VERSION).toBe('0.9.5'); expect(packageData.version).toBe(APP_VERSION);
     for (const file of ['../index.html', '../worksheet-v0.2.0-2026.10.19.html'])
       expect(readFileSync(new URL(file, import.meta.url), 'utf8')).toContain(`v${APP_VERSION}`);
   });
