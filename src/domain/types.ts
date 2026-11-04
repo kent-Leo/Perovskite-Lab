@@ -71,7 +71,8 @@ export interface AxisStyle {
   ticks: 'out' | 'in' | 'both' | 'none';
   tickLength: number;
   tickWidth: number;
-  divisions: number;
+  /** Tick interval in axis data units; 0 or missing picks a readable interval automatically. */
+  step: number;
 }
 export const axisSides: AxisSide[] = ['bottom', 'top', 'left', 'right'];
 export const axisNames: Record<AxisSide, string> = {
@@ -83,7 +84,7 @@ export function chartAxes(style: ChartStyle): Record<AxisSide, AxisStyle> {
     visible: true,
     tickLabels: side === 'bottom' || side === 'left',
     ticks: side === 'bottom' || side === 'left' ? 'in' : 'none',
-    tickLength: 5, tickWidth: 1.1, divisions: 5,
+    tickLength: 5, tickWidth: 1.1, step: 0,
     ...style.axes?.[side],
     // Persisted partial axes may omit their title; blank titles remain valid.
     label: (side === 'bottom' ? style.xLabel : side === 'left' ? style.yLabel : style.axes?.[side]?.label) ?? '',

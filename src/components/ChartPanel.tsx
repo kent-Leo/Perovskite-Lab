@@ -438,10 +438,13 @@ export function ChartPanel({
                       onChange={(e) => setAxis({ tickWidth: Math.max(0.5, Math.min(5, Number(e.target.value))) })} />
                   </Field>
                 </div>
-                <Field label={`${axisNames[axisSide]}刻度分段数`} hint={data.categories && (axisSide === 'top' || axisSide === 'bottom') ? '分类轴按每个对象显示刻度' : '1–20 段，两端均显示刻度'}>
-                  <input type="number" min={1} max={20} step={1} value={axis.divisions}
+                <Field label={`${axisNames[axisSide]}刻度间隔`} hint={data.categories && (axisSide === 'top' || axisSide === 'bottom') ? '分类轴按每个对象显示刻度' : '按数据单位填写，刻度落在间隔的整数倍，留空自动'}>
+                  <input type="number" min={0} step="any" placeholder="自动" value={axis.step > 0 ? axis.step : ''}
                     disabled={!!data.categories && (axisSide === 'top' || axisSide === 'bottom')}
-                    onChange={(e) => setAxis({ divisions: Math.max(1, Math.min(20, Math.round(Number(e.target.value)))) })} />
+                    onChange={(e) => {
+                      const value = Number(e.target.value);
+                      setAxis({ step: e.target.value.trim() === '' || !Number.isFinite(value) ? 0 : Math.max(0, value) });
+                    }} />
                 </Field>
                 {!custom?.paper && <p className="muted">上 / 下轴共用 X 范围，左 / 右轴共用 Y 范围。</p>}
               </div>

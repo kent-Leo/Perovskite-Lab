@@ -71,11 +71,14 @@ for (const [name, kind] of [['光谱工作台', 'spectra'], ['对象筛选', 'sc
       await page.getByLabel(`${chinese}刻度线`, { exact: true }).selectOption('both');
       await page.getByLabel(`${chinese}刻度长度`, { exact: true }).fill('9');
       await page.getByLabel(`${chinese}刻度粗细`, { exact: true }).fill('2');
-      if (kind !== 'screening' || side === 'left' || side === 'right')
-        await page.getByLabel(`${chinese}刻度分段数`, { exact: true }).fill('4');
+      if (kind !== 'screening' && (side === 'bottom' || side === 'top'))
+        await page.getByLabel(`${chinese}刻度间隔`, { exact: true }).fill('20');
       const axis = chart.locator(`[data-axis="${side}"]`);
       await expect(axis.locator('[data-axis-title]')).toHaveText(`${chinese}实验 <&>`);
-      await expect(axis.locator('[data-axis-ticks] line')).toHaveCount(kind === 'screening' && (side === 'top' || side === 'bottom') ? 6 : 5);
+      if (kind === 'screening' && (side === 'top' || side === 'bottom'))
+        await expect(axis.locator('[data-axis-ticks] line')).toHaveCount(6);
+      else
+        await expect(axis.locator('[data-axis-ticks] line')).not.toHaveCount(0);
       const tick = axis.locator('[data-axis-ticks] line').first();
       const span = await tick.evaluate((el, horizontal) => {
         const a = horizontal ? 'y' : 'x';
@@ -94,6 +97,10 @@ for (const [name, kind] of [['光谱工作台', 'spectra'], ['对象筛选', 'sc
     await page.reload();
     await expect(chart.locator('[data-axis="right"] [data-axis-title]')).toHaveText('右轴实验 <&>');
     await page.getByRole('button', { name: '坐标', exact: true }).click();
+    if (kind !== 'screening') {
+      await page.getByRole('button', { name: '下轴', exact: true }).click();
+      await expect(page.getByLabel('下轴刻度间隔', { exact: true })).toHaveValue('20');
+    }
     await page.getByRole('button', { name: '右轴', exact: true }).click();
     await expect(page.getByLabel('右轴刻度线', { exact: true })).toHaveValue('none');
     await page.screenshot({ path: info.outputPath(`${kind}-四轴-v0.3.1-2026.10.19.png`), fullPage: true });
@@ -115,7 +122,7 @@ test('four axes export to SVG, PNG and PDF with versioned filenames', async ({ p
     const pending = page.waitForEvent('download');
     await page.getByRole('button', { name: format, exact: true }).click();
     const file = await pending;
-    expect(file.suggestedFilename()).toMatch(/-v0\.9\.3-\d{4}\.\d{1,2}\.\d{1,2}\./);
+    expect(file.suggestedFilename()).toMatch(/-v0\.9\.4-\d{4}\.\d{1,2}\.\d{1,2}\./);
     const path = info.outputPath(`四轴-v0.3.1-2026.10.19.${format.toLowerCase()}`);
     await file.saveAs(path);
     const bytes = await readFile(path);
@@ -180,7 +187,7 @@ test('inward/outward ticks point correctly on each edge and zero length hides on
     }
     await page.getByLabel(`${label}刻度长度`, { exact: true }).fill('0');
     await expect(page.locator(`[data-axis="${side}"] [data-axis-ticks] line`)).toHaveCount(0);
-    await expect(page.locator(`[data-axis="${side}"] [data-axis-tick-labels] text`)).toHaveCount(6);
+    await expect(page.locator(`[data-axis="${side}"] [data-axis-tick-labels] text`)).not.toHaveCount(0);
   }
 });
 

@@ -3,6 +3,27 @@ import { fmt, numeric } from './math';
 import { chartAxes, axisSides, type AxisSide, type ChartStyle, type PlotData } from './types';
 export const escapeXML = (s: string) =>
   s.replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[c]!);
+/** A readable interval (1 / 2 / 5 × 10ⁿ) that yields roughly five segments. */
+function autoInterval(min: number, max: number): number {
+  const span = max - min;
+  if (!Number.isFinite(span) || span <= 0) return 1;
+  const rough = span / 5, magnitude = 10 ** Math.floor(Math.log10(rough)), ratio = rough / magnitude;
+  return (ratio <= 1 ? 1 : ratio <= 2 ? 2 : ratio <= 5 ? 5 : 10) * magnitude;
+}
+/** Tick interval in axis data units; a missing or non-positive value means automatic. */
+export function axisInterval(min: number, max: number, step: number): number {
+  return Number.isFinite(step) && step > 0 ? step : autoInterval(min, max);
+}
+/** Ticks sit on multiples of the interval so every label stays a round number. */
+export function axisTickValues(min: number, max: number, step: number): number[] {
+  const interval = axisInterval(min, max, step);
+  const first = Math.ceil(min / interval - 1e-9), last = Math.floor(max / interval + 1e-9);
+  if (last - first > 200) throw new Error('刻度间隔过小，请增大间隔或留空自动');
+  const values: number[] = [];
+  for (let i = first; i <= last; i++) values.push(Number((i * interval).toPrecision(12)));
+  // A range shorter than one interval still shows its two ends.
+  return values.length ? values : [min, max];
+}
 /** Optional annotations share the exact scales used to draw the measured points. */
 export interface ChartOverlay {
   minWidth?: number; minHeight?: number; rightMargin?: number; titlePadding?: number;
@@ -15,8 +36,8 @@ export function chartSVG(data: PlotData, style: ChartStyle, overlay?: ChartOverl
   if (!ps.length) throw new Error('暂无可绘制数据');
   const bar = !!data.categories, axes = chartAxes(style), fs = style.fontSize;
   for (const axis of Object.values(axes)) {
-    if (!Number.isInteger(axis.divisions) || axis.divisions < 1 || axis.divisions > 20)
-      throw new Error('刻度分段数须为 1–20 的整数');
+    if (axis.step !== undefined && (!Number.isFinite(axis.step) || axis.step < 0))
+      throw new Error('刻度间隔须为大于 0 的数值，或留空自动');
     if (!Number.isFinite(axis.tickLength) || axis.tickLength < 0 || axis.tickLength > 20 ||
         !Number.isFinite(axis.tickWidth) || axis.tickWidth < 0.5 || axis.tickWidth > 5)
       throw new Error('刻度长度须为 0–20，粗细须为 0.5–5');
@@ -46,11 +67,9 @@ export function chartSVG(data: PlotData, style: ChartStyle, overlay?: ChartOverl
     const horizontal = side === 'bottom' || side === 'top';
     if (horizontal && bar) return data.categories!.map((label, value) => ({ value, label }))
       .filter(({ value }) => value >= x0 && value <= x1);
-    const min = horizontal ? x0 : y0, max = horizontal ? x1 : y1, n = axes[side].divisions;
-    return Array.from({ length: n + 1 }, (_, i) => {
-      const value = min + ((max - min) * i) / n;
-      return { value, label: fmt(value, horizontal ? 4 : 3) };
-    });
+    const min = horizontal ? x0 : y0, max = horizontal ? x1 : y1;
+    return axisTickValues(min, max, axes[side].step)
+      .map((value) => ({ value, label: fmt(value, horizontal ? 4 : 3) }));
   };
   const labelWidth = (s: string, size = fs) => Array.from(s).reduce(
     (n, c) => n + (c.codePointAt(0)! > 0x2e80 ? 1 : 0.65) * size, 0);
@@ -93,7 +112,7 @@ export function chartSVG(data: PlotData, style: ChartStyle, overlay?: ChartOverl
     if (!axis.visible || !axis.tickLabels) return 0;
     const width = Math.max(0, ...ticksFor(side).map((t) => labelWidth(t.label)));
     return bar ? (width * 0.866 + 16) * (data.categories?.length ?? 0)
-      : (width + 16) * axis.divisions;
+      : (width + 16) * Math.max(1, ticksFor(side).length);
   }));
   const W = Math.max(1000, overlay?.minWidth ?? 0, left + right + Math.max(550, horizontalTitle, horizontalTicks)),
     H = Math.max(600, overlay?.minHeight ?? 0, top + bottom + Math.max(350, verticalTitle),
