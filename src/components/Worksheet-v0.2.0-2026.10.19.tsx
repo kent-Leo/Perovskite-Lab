@@ -19,6 +19,8 @@ import {
   selectionName,
   selectionBounds,
   selectionStats,
+  columnSelection,
+  rowSelection,
   copyWorksheetRange,
   clearWorksheetRange,
   pasteWorksheetRange,
@@ -148,6 +150,8 @@ export function Worksheet({
     dragging = useRef(false),
     dragPointer = useRef<number | null>(null),
     rowDragging = useRef<number | null>(null),
+    headerDrag = useRef<{ kind: 'column' | 'row'; start: number } | null>(null),
+    headerDragMoved = useRef(false),
     navigating = useRef(false),
     pendingFocus = useRef<CellAddress | null>(null);
   const [selection, setSelection] = useState<CellSelection>({
@@ -192,13 +196,28 @@ export function Worksheet({
     // (Windows additionally cancels the pointer stream when the browser starts
     // a native text drag from a focused input). A window-level pointermove
     // fallback hit-tests the cell under the cursor with elementFromPoint.
+    //
+    // 指针拖到表格外时不能就此停住：把命中点夹到最近的边缘，选区继续朝
+    // 鼠标方向延伸到首行/末行、首列/末列，和 Excel 的手感一致。
+    const cellAt = (x: number, y: number) => {
+      const hit = document.elementFromPoint(x, y);
+      if (!(hit instanceof Element) || !root.current?.contains(hit)) return null;
+      return cellFromAttr(hit.closest('[data-cell]')?.getAttribute('data-cell'));
+    };
     const extend = (e: PointerEvent) => {
       if (!dragging.current || e.buttons !== 1) return;
       if (dragPointer.current !== null && e.pointerId !== dragPointer.current) return;
-      const hit = document.elementFromPoint(e.clientX, e.clientY);
-      // Ignore clicks over other worksheets / chrome: only this grid extends.
-      if (!(hit instanceof Element) || !root.current?.contains(hit)) return;
-      const at = cellFromAttr(hit.closest('[data-cell]')?.getAttribute('data-cell'));
+      const surface = root.current?.querySelector('.worksheet-scroll') ?? root.current;
+      if (!surface) return;
+      const rect = surface.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      // 18px 内缩用于避开滚动条本体。
+      const x = Math.min(Math.max(e.clientX, rect.left + 2), rect.right - 18);
+      const y = Math.min(Math.max(e.clientY, rect.top + 2), rect.bottom - 18);
+      const at =
+        cellAt(x, y) ??
+        cellAt(e.clientX, y) ??
+        cellAt(x, e.clientY);
       if (!at) return;
       setSelection((s) =>
         s.focus.row === at.row && s.focus.column === at.column ? s : { ...s, focus: at },
@@ -217,6 +236,54 @@ export function Worksheet({
       window.removeEventListener('pointercancel', stop);
     };
   }, []);
+  useEffect(() => {
+    // Excel 式连选：按住列标或行号拖动，一次选中多列 / 多行。
+    const move = (e: PointerEvent) => {
+      const drag = headerDrag.current;
+      if (!drag || e.buttons !== 1) return;
+      const hit = document.elementFromPoint(e.clientX, e.clientY);
+      if (!(hit instanceof Element)) return;
+      if (drag.kind === 'column') {
+        const raw = hit.closest('[data-col]')?.getAttribute('data-col');
+        if (raw == null) return;
+        const column = Number(raw),
+          from = Math.min(drag.start, column),
+          to = Math.max(drag.start, column);
+        if (to !== from) headerDragMoved.current = true;
+        setSelection({
+          anchor: { row: 0, column: from },
+          focus: { row: Math.max(0, height - 1), column: to },
+        });
+        setEditing(false);
+        return;
+      }
+      const raw = hit.closest('[data-row]')?.getAttribute('data-row');
+      if (raw == null) return;
+      const row = Number(raw),
+        from = Math.min(drag.start, row),
+        to = Math.max(drag.start, row);
+      if (to !== from) headerDragMoved.current = true;
+      setSelection({
+        anchor: { row: from, column: 0 },
+        focus: { row: to, column: Math.max(0, columns.length - 1) },
+      });
+      setEditing(false);
+    };
+    const stop = () => {
+      headerDrag.current = null;
+      window.setTimeout(() => {
+        headerDragMoved.current = false;
+      }, 0);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', stop);
+    window.addEventListener('pointercancel', stop);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', stop);
+      window.removeEventListener('pointercancel', stop);
+    };
+  }, [height, columns.length]);
   useEffect(() => {
     const clamp = (c: CellAddress) => ({
       row: Math.min(c.row, height - 1),
@@ -291,6 +358,16 @@ export function Worksheet({
     setSelection((s) => ({ anchor: extend ? s.anchor : next, focus: next }));
     setEditing(false);
     pendingFocus.current = next;
+  }
+  /** Excel 式整列选中；extend 时保留锚点所在列，从而 Shift 连选多列。 */
+  function selectColumn(column: number, extend = false) {
+    setSelection((s) => columnSelection(column, height, extend ? s.anchor.column : column));
+    setEditing(false);
+  }
+  /** Excel 式整行选中；extend 时保留锚点所在行。 */
+  function selectRow(row: number, extend = false) {
+    setSelection((s) => rowSelection(row, columns.length, extend ? s.anchor.row : row));
+    setEditing(false);
   }
   /** Enter edit mode with the caret after the current text (collapsing a select-all). */
   function editAtEnd(input: HTMLInputElement) {
@@ -485,6 +562,10 @@ export function Worksheet({
     }
   }
   const stats = useMemo(() => selectionStats(data, selection), [data, selection]);
+  // 选区覆盖整列 / 整行时高亮对应表头，供 Excel 式连选反馈。
+  const bounds = selectionBounds(selection),
+    wholeColumns = bounds.top === 0 && bounds.bottom === height - 1,
+    wholeRows = bounds.left === 0 && bounds.right === columns.length - 1;
   const focus = selection.focus,
     activeColumn = columns[focus.column],
     activeValue = data[focus.row]?.[focus.column] ?? '';
@@ -662,14 +743,17 @@ export function Worksheet({
         >
           <thead>
             <tr>
-              <th className="worksheet-corner">
+              <th className={`worksheet-corner${wholeColumns && wholeRows ? ' is-selected' : ''}`}>
                 <button
                   type="button"
                   aria-label="选择整个工作表"
                   onClick={() => {
                     setSelection({
                       anchor: firstCell,
-                      focus: { row: height - 1, column: Math.max(0, columns.length - 1) },
+                      focus: {
+                        row: Math.max(0, height - 1),
+                        column: Math.max(0, columns.length - 1),
+                      },
                     });
                     setEditing(false);
                   }}
@@ -678,16 +762,26 @@ export function Worksheet({
                 </button>
               </th>
               {columns.map((col, c) => (
-                <th scope="col" key={col.key}>
+                <th
+                  scope="col"
+                  key={col.key}
+                  data-col={c}
+                  className={
+                    wholeColumns && c >= bounds.left && c <= bounds.right ? 'is-selected' : undefined
+                  }
+                >
                   <button
                     type="button"
                     aria-label={`选择 ${columnLetter(c)} 列`}
-                    onClick={() => {
-                      setSelection({
-                        anchor: { row: 0, column: c },
-                        focus: { row: height - 1, column: c },
-                      });
-                      setEditing(false);
+                    title="单击选中整列，按住拖动或 Shift+单击可连选多列"
+                    onPointerDown={(e) => {
+                      if (e.button !== 0) return;
+                      headerDragMoved.current = false;
+                      headerDrag.current = { kind: 'column', start: c };
+                    }}
+                    onClick={(e) => {
+                      if (headerDragMoved.current) return;
+                      selectColumn(c, e.shiftKey);
                     }}
                   >
                     {columnLetter(c)}
@@ -743,12 +837,28 @@ export function Worksheet({
                     rowDragging.current = null;
                   }}
                 >
-                  <th scope="row">
+                  <th
+                    scope="row"
+                    data-row={r}
+                    className={
+                      wholeRows && r >= bounds.top && r <= bounds.bottom ? 'is-selected' : undefined
+                    }
+                  >
                     <button
                       type="button"
                       aria-label={`选择第 ${r + 1} 行`}
                       draggable={!!onMoveRow && r < rows.length}
-                      title={onMoveRow ? '拖动行号调整顺序' : undefined}
+                      title={
+                        onMoveRow
+                          ? '单击选中整行；拖动行号调整顺序'
+                          : '单击选中整行，按住拖动或 Shift+单击可连选多行'
+                      }
+                      onPointerDown={(e) => {
+                        // 行号在本表里是拖拽排序把手，交给原生 DnD；其余情况才支持连选。
+                        if (e.button !== 0 || (onMoveRow && r < rows.length)) return;
+                        headerDragMoved.current = false;
+                        headerDrag.current = { kind: 'row', start: r };
+                      }}
                       onDragStart={(e) => {
                         rowDragging.current = r;
                         e.dataTransfer.setData('text/plain', String(r + 1));
@@ -757,12 +867,9 @@ export function Worksheet({
                       onDragEnd={() => {
                         rowDragging.current = null;
                       }}
-                      onClick={() => {
-                        setSelection({
-                          anchor: { row: r, column: 0 },
-                          focus: { row: r, column: Math.max(0, columns.length - 1) },
-                        });
-                        setEditing(false);
+                      onClick={(e) => {
+                        if (headerDragMoved.current) return;
+                        selectRow(r, e.shiftKey);
                       }}
                     >
                       {r + 1}
@@ -1011,7 +1118,7 @@ export function Worksheet({
         <span>
           {sheetError ||
             message ||
-            '方向键 / Tab 移动 · F2 或双击编辑 · Backspace 逐字删除 · Delete 清空单元格 · ⌘/Ctrl+C/V 复制粘贴'}
+            '方向键 / Tab 移动 · F2 或双击编辑 · Backspace 逐字删除 · Delete 清空单元格 · ⌘/Ctrl+C/V 复制粘贴 · 单击行号/列标选中整行整列，拖动连选'}
         </span>
         <span>
           选中 {stats.cells} 格 · 数值 {stats.numeric}

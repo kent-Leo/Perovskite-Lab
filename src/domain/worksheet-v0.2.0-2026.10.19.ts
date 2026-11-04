@@ -55,6 +55,24 @@ export function cellInSelection(cell: CellAddress, s: CellSelection) {
     cell.row >= b.top && cell.row <= b.bottom && cell.column >= b.left && cell.column <= b.right
   );
 }
+/** Excel 式整列选区；anchorColumn 用于 Shift / 拖拽连选时保留锚点列。 */
+export function columnSelection(
+  column: number,
+  height: number,
+  anchorColumn = column,
+): CellSelection {
+  return {
+    anchor: { row: 0, column: anchorColumn },
+    focus: { row: Math.max(0, height - 1), column },
+  };
+}
+/** Excel 式整行选区；anchorRow 用于 Shift / 拖拽连选时保留锚点行。 */
+export function rowSelection(row: number, width: number, anchorRow = row): CellSelection {
+  return {
+    anchor: { row: anchorRow, column: 0 },
+    focus: { row, column: Math.max(0, width - 1) },
+  };
+}
 export function rangeValues(rows: string[][], s: CellSelection) {
   const b = selectionBounds(s);
   return Array.from({ length: b.bottom - b.top + 1 }, (_, r) =>

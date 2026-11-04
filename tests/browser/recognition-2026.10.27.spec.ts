@@ -154,7 +154,7 @@ test('Excel and SVG / PNG export match the visible analysis, full precision, Chi
   const excelEvent = page.waitForEvent('download');
   await moduleOf(page).getByRole('button', { name: '导出分析 Excel', exact: true }).click();
   const excel = await excelEvent, excelPath = path.join(evidence, excel.suggestedFilename()); await excel.saveAs(excelPath);
-  expect(excel.suggestedFilename()).toMatch(/v0\.9\.4-\d{4}\.\d{1,2}\.\d{1,2}\.xlsx$/);
+  expect(excel.suggestedFilename()).toMatch(/v0\.9\.5-\d{4}\.\d{1,2}\.\d{1,2}\.xlsx$/);
   const wb = XLSX.read(readFileSync(excelPath), { type: 'buffer' });
   expect(wb.SheetNames).toEqual(['猝灭率', 'PCA得分', 'PCA载荷', '方差解释率', '聚类结果', 'Ward合并', '分析设置']);
   const q = XLSX.utils.sheet_to_json<any[]>(wb.Sheets['猝灭率'], { header: 1 });

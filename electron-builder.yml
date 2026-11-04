@@ -53,4 +53,7 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: Perovskite Lab
+  uninstallDisplayName: Perovskite Lab
   deleteAppDataOnUninstall: false
+  # 差分打包依赖 blockmap，与旧产物混放时容易和卸载器对不上，直接关掉
+  differentialPackage: false

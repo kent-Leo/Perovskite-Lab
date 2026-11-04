@@ -161,6 +161,12 @@
 .worksheet th button:hover {
   background: #d6e5f7;
 }
+/* Excel 式整行/整列选中：表头跟着高亮，便于确认连着选到了哪里。 */
+.worksheet thead th.is-selected,
+.worksheet tbody th.is-selected {
+  background: #cfe0f5;
+  color: #21456f;
+}
 .worksheet .worksheet-label-row th {
   font-size: 10px;
   color: #7b8da0;
