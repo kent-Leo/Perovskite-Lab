@@ -1,5 +1,5 @@
 import { chartFontFamily } from './chart-fonts-2026.11.3';
-import { chartSVG, escapeXML as esc } from './chart';
+import { chartSVG, escapeXML as esc, axisTickValues } from './chart';
 import { fmt } from './math';
 import { ionColor, type RecognitionAnalysis, type RecognitionData } from './recognition-2026.10.27';
 import { chartAxes, type ChartStyle, type PlotData } from './types';
@@ -192,9 +192,8 @@ export function horizontalHierarchySVG(d: RecognitionData, a: RecognitionAnalysi
   const axis = chartAxes(style).bottom;
   if (axis.visible) {
     out.push('<g data-axis="bottom">'); line(left, axisY, left + pw, axisY);
-    const divisions = Math.max(1, Math.min(20, Math.round(axis.divisions)));
-    for (let i = 0; i <= divisions; i++) {
-      const value = i / divisions * scale, x = sx(value);
+    for (const value of axisTickValues(0, scale, axis.step)) {
+      const x = sx(value);
       const outward = axis.ticks === 'out' || axis.ticks === 'both' ? axis.tickLength : 0;
       const inward = axis.ticks === 'in' || axis.ticks === 'both' ? axis.tickLength : 0;
       if (axis.ticks !== 'none') line(x, axisY - inward, x, axisY + outward, '', axis.tickWidth);

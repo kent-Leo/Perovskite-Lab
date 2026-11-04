@@ -20,8 +20,8 @@ describe('four-sided axes', () => {
   it('renders each side independently and escapes titles', () => {
     const style = defaultStyle('spectra');
     style.axes = { bottom: { visible: false }, left: { ticks: 'none', tickLabels: false },
-      top: { visible: true, label: '<top & label>', divisions: 4 },
-      right: { visible: true, label: 'right', ticks: 'both', divisions: 2, tickLength: 10, tickWidth: 3 } };
+      top: { visible: true, label: '<top & label>', step: 5 },
+      right: { visible: true, label: 'right', ticks: 'both', step: 50, tickLength: 10, tickWidth: 3 } };
     const svg = chartSVG(data, style);
     expect(svg).not.toContain('data-axis="bottom"');
     expect(svg).toContain('&lt;top &amp; label&gt;');
@@ -40,8 +40,19 @@ describe('four-sided axes', () => {
     expect(top).not.toContain('NaN');
   });
   it('rejects unbounded or invalid tick settings', () => {
-    for (const divisions of [0, -1, 1.5, 21, Infinity])
-      expect(() => chartSVG(data, { ...defaultStyle('spectra'), axes: { bottom: { divisions } } })).toThrow('刻度分段数');
+    for (const step of [-1, NaN, Infinity])
+      expect(() => chartSVG(data, { ...defaultStyle('spectra'), axes: { bottom: { step } } })).toThrow('刻度间隔');
     expect(() => chartSVG(data, { ...defaultStyle('spectra'), axes: { top: { tickLength: NaN } } })).toThrow('刻度长度');
+  });
+  it('places ticks on multiples of the interval in data units', () => {
+    const axisTicks = (svg: string, side: 'bottom' | 'left') =>
+      svg.split(`data-axis="${side}"`)[1].split('</g></g>')[0]
+        .match(/>[-\d.]+<\/text>/g)!.map((s) => Number(s.slice(1, -7)));
+    const svg = chartSVG(data, { ...defaultStyle('spectra'), axes: { bottom: { step: 4 }, left: { step: 20 } } });
+    expect(axisTicks(svg, 'bottom')).toEqual([0, 4, 8]);
+    expect(axisTicks(svg, 'left')).toEqual([0, 20, 40, 60, 80, 100]);
+    // Leaving the interval blank keeps readable automatic ticks.
+    expect(chartAxes({ ...defaultStyle('spectra'), axes: { bottom: { step: 0 } } }).bottom.step).toBe(0);
+    expect(axisTicks(chartSVG(data, defaultStyle('spectra')), 'bottom').length).toBeGreaterThan(1);
   });
 });

@@ -168,7 +168,7 @@ test('SVG geometry equals the preview and PNG pixels equal the exported SVG rast
       const event = page.waitForEvent('download');
       await panel.getByRole('button', { name: format, exact: true }).click();
       const download = await event, file = path.join(evidence, download.suggestedFilename());
-      expect(download.suggestedFilename()).toMatch(/v0\.9\.3-\d{4}\.\d{1,2}\.\d{1,2}\./);
+      expect(download.suggestedFilename()).toMatch(/v0\.9\.4-\d{4}\.\d{1,2}\.\d{1,2}\./);
       await download.saveAs(file); downloads[format] = readFileSync(file);
     }
     const result = await page.evaluate(async ({ preview, exported, png }) => {
