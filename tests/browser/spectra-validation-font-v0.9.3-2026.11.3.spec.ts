@@ -1,4 +1,5 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
+import { versionTag } from './version-tag-2026.11.5';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
@@ -100,7 +101,9 @@ test('Song font persists, embeds in SVG and PDF, and renders the same PNG after 
     const pending = page.waitForEvent('download');
     await page.getByRole('button', { name: format, exact: true }).click();
     const result = await pending;
-    expect(result.suggestedFilename()).toMatch(/-v0\.9\.5-\d{4}\.\d{1,2}\.\d{1,2}\./);
+    expect(result.suggestedFilename()).toMatch(
+      new RegExp(`-${versionTag}-\\d{4}\\.\\d{1,2}\\.\\d{1,2}\\.`),
+    );
     const file = info.outputPath(`${stem}-2026.11.3.${format.toLowerCase()}`);
     await result.saveAs(file);
     return readFileSync(file);
