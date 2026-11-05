@@ -2,9 +2,18 @@ import {
   app, BrowserWindow, Menu, dialog, ipcMain, protocol, session, shell,
   type MenuItemConstructorOptions,
 } from 'electron';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, stat, writeFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { handleAiRequest } from '../server/ai-handler-2026.10.24';
+import {
+  PROJECT_FILTERS,
+  defaultProjectFileName,
+  ensureProjectExtension,
+  readProjectFile,
+  windowTitle,
+  writeFileAtomic,
+} from './project-files-2026.11.5';
 
 /**
  * 桌面壳：把 dist/ 静态站点挂到稳定的 app://local 源上，
@@ -106,22 +115,55 @@ type ProjectCommand =
   | { type: 'save' }
   | { type: 'save-as' }
   | { type: 'open' }
-  | { type: 'loaded'; path: string; content: string };
+  | { type: 'new' }
+  | { type: 'loaded'; path: string; content: string }
+  | { type: 'load-error'; path: string; error: string };
+
+type ProjectSession = { lastProjectPath: string | null };
 
 /** 当前打开的项目文件；为空表示尚未落盘。仅存在主进程，渲染进程不持有路径。 */
 let projectPath: string | null = null;
+/** 渲染进程上报的未保存状态，只用于窗口标题与关闭确认。 */
+let projectDirty = false;
 /** 应用启动前双击项目文件时，先暂存，等窗口就绪后再送过去。 */
 let pendingProjectFile: string | null = null;
+/** 已通过校验、等待渲染进程 adopt 的路径；渲染进程确认前不改动 projectPath。 */
+let confirmedProjectFile: string | null = null;
+let startupSession: ProjectSession = { lastProjectPath: null };
+let initialStateCache: { path: string | null; content?: string; explicit: boolean } | null = null;
+let closeAfterSave = false;
+let closing = false;
+let closePromptOpen = false;
 
-const projectFilters = [
-  { name: 'Perovskite Lab 项目', extensions: ['plab'] },
-  { name: '工作区备份 JSON', extensions: ['json'] },
-];
+const projectFilters = PROJECT_FILTERS;
 
-function defaultProjectName() {
-  const now = new Date();
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return `Perovskite Lab ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}.plab`;
+function sessionFile() {
+  return path.join(app.getPath('userData'), 'project-session.json');
+}
+
+async function readSession(): Promise<ProjectSession> {
+  try {
+    const data = JSON.parse(await readFile(sessionFile(), 'utf8')) as {
+      lastProjectPath?: unknown;
+    };
+    return {
+      lastProjectPath: typeof data.lastProjectPath === 'string' ? data.lastProjectPath : null,
+    };
+  } catch {
+    return { lastProjectPath: null };
+  }
+}
+
+async function writeSession() {
+  try {
+    await writeFile(
+      sessionFile(),
+      JSON.stringify({ lastProjectPath: projectPath } satisfies ProjectSession),
+      'utf8',
+    );
+  } catch {
+    /* 会话记录失败不影响项目文件本身 */
+  }
 }
 
 function projectFileFromArgv(argv: string[]) {
@@ -136,8 +178,7 @@ function focusedWindow(event?: Electron.IpcMainInvokeEvent) {
 function updateWindowTitle() {
   const win = BrowserWindow.getAllWindows()[0];
   if (!win) return;
-  const suffix = `Perovskite Lab v${app.getVersion()}`;
-  win.setTitle(projectPath ? `${path.basename(projectPath)} — ${suffix}` : suffix);
+  win.setTitle(windowTitle(projectPath, projectDirty, app.getVersion()));
 }
 
 function sendProjectCommand(command: ProjectCommand) {
@@ -145,11 +186,10 @@ function sendProjectCommand(command: ProjectCommand) {
   win?.webContents.send('project:command', command);
 }
 
-async function readProjectFile(filePath: string) {
-  const content = await readFile(filePath, 'utf8');
-  projectPath = filePath;
-  updateWindowTitle();
-  return content;
+/** 只读取内容，不改变当前项目路径：路径要等渲染进程校验、确认后再 adopt。 */
+async function readProjectContent(filePath: string) {
+  confirmedProjectFile = filePath;
+  return readProjectFile(filePath);
 }
 
 async function deliverProjectFile(filePath: string) {
@@ -159,14 +199,60 @@ async function deliverProjectFile(filePath: string) {
     return;
   }
   try {
-    const content = await readProjectFile(filePath);
+    const content = await readProjectContent(filePath);
     win.webContents.send('project:command', { type: 'loaded', path: filePath, content });
-  } catch {
-    pendingProjectFile = filePath;
+  } catch (error) {
+    confirmedProjectFile = null;
+    win.webContents.send('project:command', {
+      type: 'load-error',
+      path: filePath,
+      error: `读取失败：${(error as Error).message}`,
+    });
   }
 }
 
+/**
+ * 启动恢复只使用「上次打开的项目文件」和「未命名草稿」：
+ * - 命令行 / Finder 显式指定了 .plab 时，只加载该文件，绝不用上次的工作区顶替；
+ * - 没有指定文件时，先读上次的项目文件内容，并由渲染进程决定是否改用更新的本地草稿。
+ */
+function computeInitialState() {
+  if (initialStateCache) return initialStateCache;
+  const explicit = pendingProjectFile ?? projectFileFromArgv(process.argv);
+  if (explicit) {
+    try {
+      // 已随启动参数加载，避免 did-finish-load 时重复投递同一文件。
+      pendingProjectFile = null;
+      initialStateCache = {
+        path: explicit,
+        content: readFileSync(explicit, 'utf8'),
+        explicit: true,
+      };
+      return initialStateCache;
+    } catch {
+      pendingProjectFile = null;
+      initialStateCache = { path: null, explicit: true };
+      return initialStateCache;
+    }
+  }
+  const last = startupSession.lastProjectPath;
+  if (last) {
+    try {
+      initialStateCache = { path: last, content: readFileSync(last, 'utf8'), explicit: false };
+      return initialStateCache;
+    } catch {
+      /* 上次的文件被移动或删除：按新项目启动 */
+    }
+  }
+  initialStateCache = { path: null, explicit: false };
+  return initialStateCache;
+}
+
 function registerProjectHandlers() {
+  ipcMain.on('project:initial-state', (event) => {
+    event.returnValue = computeInitialState();
+  });
+
   ipcMain.handle('project:save', async (event, payload: { content?: unknown; saveAs?: unknown }) => {
     const content = typeof payload?.content === 'string' ? payload.content : '';
     if (!content) return { canceled: true, error: '没有可保存的数据' };
@@ -175,19 +261,19 @@ function registerProjectHandlers() {
     if (!target) {
       const options: Electron.SaveDialogOptions = {
         title: '保存项目',
-        defaultPath: path.join(app.getPath('documents'), defaultProjectName()),
+        defaultPath: path.join(app.getPath('documents'), defaultProjectFileName()),
         filters: projectFilters,
       };
       const result = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options);
       if (result.canceled || !result.filePath) return { canceled: true };
-      target = result.filePath.endsWith('.plab') || result.filePath.endsWith('.json')
-        ? result.filePath
-        : `${result.filePath}.plab`;
+      target = ensureProjectExtension(result.filePath);
     }
     try {
-      await writeFile(target, content, 'utf8');
+      await writeFileAtomic(target, content);
       projectPath = target;
+      projectDirty = false;
       updateWindowTitle();
+      await writeSession();
       return { canceled: false, path: target };
     } catch (error) {
       return { canceled: true, error: `写入失败：${(error as Error).message}` };
@@ -205,11 +291,106 @@ function registerProjectHandlers() {
     const [filePath] = result.filePaths;
     if (result.canceled || !filePath) return { canceled: true };
     try {
-      return { canceled: false, path: filePath, content: await readProjectFile(filePath) };
+      return { canceled: false, path: filePath, content: await readProjectContent(filePath) };
     } catch (error) {
+      confirmedProjectFile = null;
       return { canceled: true, error: `读取失败：${(error as Error).message}` };
     }
   });
+
+  /** 渲染进程完成解析与用户确认后才调用：此刻才真正切换当前项目。 */
+  ipcMain.handle('project:adopt', async (_event, payload: { path?: unknown }) => {
+    const target = typeof payload?.path === 'string' ? payload.path : '';
+    if (!target) return { ok: false, error: '缺少项目路径' };
+    if (confirmedProjectFile && confirmedProjectFile !== target)
+      return { ok: false, error: '项目文件已在别处更改，请重新打开' };
+    try {
+      await stat(target);
+    } catch {
+      return { ok: false, error: '项目文件已不存在' };
+    }
+    projectPath = target;
+    projectDirty = false;
+    confirmedProjectFile = null;
+    updateWindowTitle();
+    await writeSession();
+    return { ok: true, path: target };
+  });
+
+  /** 新建项目：清空当前路径，下一次保存重新弹出文件选择窗口。 */
+  ipcMain.handle('project:new', async () => {
+    projectPath = null;
+    projectDirty = false;
+    confirmedProjectFile = null;
+    updateWindowTitle();
+    await writeSession();
+    return { ok: true };
+  });
+
+  ipcMain.handle('project:set-dirty', (event, dirty: unknown) => {
+    projectDirty = dirty === true;
+    updateWindowTitle();
+    const win = focusedWindow(event);
+    if (!projectDirty && closeAfterSave) {
+      closeAfterSave = false;
+      closing = true;
+      win?.close();
+    }
+    return projectDirty;
+  });
+
+  ipcMain.handle('project:confirm-unsaved', async (event, payload: { name?: unknown }) => {
+    const win = focusedWindow(event);
+    const name = typeof payload?.name === 'string' && payload.name ? payload.name : '当前项目';
+    const options: Electron.MessageBoxOptions = {
+      type: 'warning',
+      buttons: ['保存', '不保存', '取消'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,
+      message: `${name} 有未保存的修改`,
+      detail: '继续操作会替换当前工作区；已保存到磁盘的项目文件不受影响。',
+    };
+    const { response } = win
+      ? await dialog.showMessageBox(win, options)
+      : await dialog.showMessageBox(options);
+    return response === 0 ? 'save' : response === 1 ? 'discard' : 'cancel';
+  });
+}
+
+/** 关闭窗口前确认未保存修改；选择保存时等渲染进程保存完成再关闭。 */
+function guardProjectClose(win: BrowserWindow) {
+  win.on('close', (event) => {
+    if (closing || !projectDirty) return;
+    event.preventDefault();
+    if (closePromptOpen) return;
+    closePromptOpen = true;
+    void dialog
+      .showMessageBox(win, {
+        type: 'warning',
+        buttons: ['保存', '不保存', '取消'],
+        defaultId: 0,
+        cancelId: 2,
+        noLink: true,
+        message: `${projectPath ? path.basename(projectPath) : '当前项目'} 有未保存的修改`,
+        detail: '关闭前是否保存到项目文件？',
+      })
+      .then(({ response }) => {
+        if (response === 2) return;
+        if (response === 1) {
+          closing = true;
+          win.close();
+          return;
+        }
+        closeAfterSave = true;
+        sendProjectCommand({ type: 'save' });
+      })
+      .finally(() => {
+        closePromptOpen = false;
+      });
+  });
+  // 页面 <title> 会让 Electron 覆盖自定义标题，这里统一由主进程维护窗口标题。
+  win.on('page-title-updated', (event) => event.preventDefault());
 }
 
 function buildMenu() {
@@ -218,7 +399,9 @@ function buildMenu() {
     {
       label: '文件',
       submenu: [
+        { label: '新建项目', accelerator: 'CmdOrCtrl+N', click: () => sendProjectCommand({ type: 'new' }) },
         { label: '打开项目…', accelerator: 'CmdOrCtrl+O', click: () => sendProjectCommand({ type: 'open' }) },
+        { type: 'separator' },
         { label: '保存项目', accelerator: 'CmdOrCtrl+S', click: () => sendProjectCommand({ type: 'save' }) },
         {
           label: '项目另存为…',
@@ -227,6 +410,9 @@ function buildMenu() {
         },
         { type: 'separator' },
         { role: 'close', label: '关闭窗口' },
+        ...(process.platform === 'darwin'
+          ? []
+          : [{ role: 'quit' as const, label: '退出' }]),
       ],
     },
     { role: 'editMenu' },
@@ -255,6 +441,7 @@ async function createWindow() {
   });
 
   win.once('ready-to-show', () => win.show());
+  guardProjectClose(win);
 
   // 站内导航只允许 app://local，外部链接交给系统浏览器。
   win.webContents.on('will-navigate', (event, url) => {
@@ -321,6 +508,8 @@ if (!locked) {
       applicationName: 'Perovskite Lab',
       applicationVersion: app.getVersion(),
     });
+
+    startupSession = await readSession();
 
     protocol.handle(SCHEME, (request) =>
       route(request).catch(() => jsonText({ error: '本地资源读取失败' }, 500)));

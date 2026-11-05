@@ -9,18 +9,14 @@ import {
   Upload,
   Download,
   Atom,
-  BookOpen,
-  NotebookPen,
-  Database,
   HardDrive,
   RotateCcw,
   Check,
-  Layers3,
   Menu,
   Sparkles,
   X,
 } from 'lucide-react';
-import { useWorkspace, demoWorkspace, blankWorkspace } from './state/workspace';
+import { useWorkspace, demoWorkspace, blankWorkspace, prepareWorkspace, type Workspace } from './state/workspace';
 import { Spectra } from './features/Spectra';
 import { Screening } from './features/Screening';
 import { Calibration } from './features/Calibration';
@@ -32,10 +28,13 @@ import { PasteSpectraTable } from './components/PasteSpectraTable-2026.10.18';
 import { ErrorNote } from './components/ui';
 import { dateStamp, downloadBlob, filename } from './services/download';
 import {
+  clearDraft,
   desktopProject,
+  draftStorageKey,
   parseProject,
   serializeProject,
 } from './services/desktop-project-2026.11.4';
+import type { DesktopBootstrap } from './state/desktop-bootstrap-2026.11.5';
 import type { ImportKind } from './services/import';
 import { useLabTools } from './services/useLabTools';
 const pages = [
@@ -75,57 +74,107 @@ const pages = [
     icon: ChartScatter,
     detail: '直接录入多探针猝灭率，绘制 PCA、层次聚类与热图。',
   },
-  { id: 'extensions', label: '后续扩展', icon: Layers3, detail: '连接实验、项目与文献的下一步。' },
 ];
 function currentPage() {
   const id = location.hash.slice(1);
   return pages.some((p) => p.id === id) ? id : 'spectra';
 }
-export default function App() {
+export default function App({ desktopBootstrap }: { desktopBootstrap?: DesktopBootstrap } = {}) {
   useLabTools();
-  const { w, update, notify, notice, storageError } = useWorkspace(),
+  const {
+      w,
+      update,
+      notify,
+      notice,
+      storageError,
+      dirty,
+      replaceWorkspace,
+      markSaved,
+      setStorageKey,
+    } = useWorkspace(),
     [page, setPage] = useState(currentPage),
     [files, setFiles] = useState<File[] | null>(null),
     [importKind, setImportKind] = useState<ImportKind>('wide'),
-    [mobileOpen, setMobileOpen] = useState(false);
+    [mobileOpen, setMobileOpen] = useState(false),
+    [projectPath, setProjectPath] = useState<string | null>(desktopBootstrap?.projectPath ?? null);
   const input = useRef<HTMLInputElement>(null);
   // 桌面端：项目文件读写。浏览器里 desktopProject 为 undefined，所有分支都会跳过。
   const latestWorkspace = useRef(w);
   latestWorkspace.current = w;
+  const latestDirty = useRef(dirty);
+  latestDirty.current = dirty;
+  const latestPath = useRef(projectPath);
+  latestPath.current = projectPath;
+  const projectName = projectPath ? (projectPath.split(/[\\/]/).pop() ?? '项目文件') : '未命名项目';
 
-  const applyProjectText = useCallback(
-    (content: string) => {
-      const parsed = (() => {
-        try {
-          return parseProject(content);
-        } catch (error) {
-          notify(`打开失败：${(error as Error).message}`);
-          return null;
-        }
-      })();
-      if (!parsed) return;
-      if (
-        (latestWorkspace.current.spectra.length || latestWorkspace.current.objects.length) &&
-        !window.confirm('打开项目会替换当前工作区数据，确定继续？已保存到磁盘的文件不受影响。')
-      )
-        return;
-      update(() => parsed.workspace);
-      notify(parsed.legacyBackup ? '已从备份 JSON 恢复工作区' : '项目已打开，可继续编辑');
-    },
-    [notify, update],
-  );
-
+  /** 保存到当前项目文件；返回是否真的写盘成功（取消或失败为 false）。 */
   const saveProjectFile = useCallback(
     async (saveAs: boolean) => {
-      if (!desktopProject) return;
+      if (!desktopProject) return false;
       const result = await desktopProject.save(serializeProject(latestWorkspace.current), saveAs);
       if (result.canceled) {
         if (result.error) notify(result.error);
-        return;
+        return false;
       }
-      notify(`项目已保存：${result.path?.split(/[\\/]/).pop() ?? '项目文件'}`);
+      const previous = latestPath.current;
+      const target = result.path ?? previous;
+      if (target) {
+        // 正式文件已经包含全部修改，对应身份的自动恢复草稿不再需要。
+        clearDraft(draftStorageKey(target));
+        setStorageKey(draftStorageKey(target));
+        latestPath.current = target;
+        setProjectPath(target);
+      }
+      if (previous && previous !== target) clearDraft(draftStorageKey(previous));
+      markSaved();
+      notify(`项目已保存：${target?.split(/[\\/]/).pop() ?? '项目文件'}`);
+      return true;
     },
-    [notify],
+    [markSaved, notify, setStorageKey],
+  );
+
+  /** 有未保存修改时询问保存 / 放弃 / 取消（桌面端用原生三按钮对话框）。 */
+  const confirmUnsaved = useCallback(async (): Promise<'save' | 'discard' | 'cancel'> => {
+    if (!desktopProject) return 'discard';
+    return desktopProject.confirmUnsaved(projectName);
+  }, [projectName]);
+
+  /**
+   * 打开项目：先解析校验，再处理未保存修改，最后才切换路径与工作区。
+   * 任何一步失败都保持当前项目不变。
+   */
+  const openProjectContent = useCallback(
+    async (path: string, content: string) => {
+      if (!desktopProject) return false;
+      let workspace: Workspace;
+      let legacyBackup = false;
+      try {
+        const parsed = parseProject(content);
+        workspace = prepareWorkspace(parsed.workspace);
+        legacyBackup = parsed.legacyBackup;
+      } catch (error) {
+        notify(`打开失败：${(error as Error).message}`);
+        return false;
+      }
+      if (latestDirty.current) {
+        const choice = await confirmUnsaved();
+        if (choice === 'cancel') return false;
+        if (choice === 'save' && !(await saveProjectFile(false))) return false;
+      }
+      const adopted = await desktopProject.adopt(path);
+      if (!adopted.ok) {
+        notify(adopted.error ?? '项目文件无法切换');
+        return false;
+      }
+      const key = draftStorageKey(path);
+      clearDraft(key);
+      latestPath.current = path;
+      setProjectPath(path);
+      replaceWorkspace(workspace, { storageKey: key });
+      notify(legacyBackup ? '已从备份 JSON 恢复工作区' : `已打开项目：${path.split(/[\\/]/).pop()}`);
+      return true;
+    },
+    [confirmUnsaved, notify, replaceWorkspace, saveProjectFile],
   );
 
   const openProjectFile = useCallback(async () => {
@@ -135,18 +184,67 @@ export default function App() {
       if (result.error) notify(result.error);
       return;
     }
-    if (result.content) applyProjectText(result.content);
-  }, [applyProjectText, notify]);
+    if (result.path && result.content !== undefined)
+      await openProjectContent(result.path, result.content);
+  }, [notify, openProjectContent]);
+
+  /** 新建空白项目：丢弃当前路径，下一次保存重新选择文件位置。 */
+  const newProject = useCallback(async () => {
+    if (latestDirty.current) {
+      const choice = await confirmUnsaved();
+      if (choice === 'cancel') return;
+      if (choice === 'save' && !(await saveProjectFile(false))) return;
+    }
+    if (desktopProject) {
+      const result = await desktopProject.newProject();
+      if (!result.ok) {
+        notify(result.error ?? '无法新建项目');
+        return;
+      }
+    } else if (!window.confirm('新建空白项目会替换当前工作区，确定继续？')) return;
+    const key = draftStorageKey(null);
+    latestPath.current = null;
+    setProjectPath(null);
+    setStorageKey(key);
+    replaceWorkspace(blankWorkspace(), { storageKey: key });
+    notify('已新建空白项目');
+  }, [confirmUnsaved, notify, replaceWorkspace, saveProjectFile, setStorageKey]);
 
   useEffect(() => {
     if (!desktopProject) return;
     desktopProject.setCommandHandler((command) => {
-      if (command.type === 'loaded') applyProjectText(command.content);
+      if (command.type === 'loaded') void openProjectContent(command.path, command.content);
+      else if (command.type === 'load-error') notify(`打开失败：${command.error}`);
       else if (command.type === 'open') void openProjectFile();
+      else if (command.type === 'new') void newProject();
       else void saveProjectFile(command.type === 'save-as');
     });
     return () => desktopProject?.setCommandHandler(null);
-  }, [applyProjectText, openProjectFile, saveProjectFile]);
+  }, [newProject, notify, openProjectContent, openProjectFile, saveProjectFile]);
+
+  // 窗口标题里的未保存状态由主进程维护，这里只同步 dirty。
+  useEffect(() => {
+    if (!desktopProject) return;
+    void desktopProject.setDirty(dirty);
+  }, [dirty]);
+
+  // 启动时只有「文件已成功解析」才把路径交给主进程：
+  // 损坏的项目文件会保持 projectPath 为空，绝不覆盖上次可用项目或草稿。
+  useEffect(() => {
+    if (!desktopProject) return;
+    const initial = desktopProject.initial;
+    const loadedPath = desktopBootstrap?.projectPath;
+    if (initial?.path && loadedPath === initial.path) {
+      void desktopProject.adopt(initial.path).then((result) => {
+        if (!result.ok) return;
+        if (initial.explicit) clearDraft(draftStorageKey(initial.path));
+        latestPath.current = initial.path;
+        setProjectPath(initial.path);
+      });
+    }
+    if (desktopBootstrap?.error) notify(desktopBootstrap.error);
+  }, []);
+
   useEffect(() => {
     const handler = () => setPage(currentPage());
     window.addEventListener('hashchange', handler);
@@ -218,7 +316,7 @@ export default function App() {
         </div>
         <div className="nav-label">数据分析</div>
         <nav>
-          {pages.filter((p) => p.id !== 'extensions').map((p) => (
+          {pages.map((p) => (
             <a
               key={p.id}
               href={`#${p.id}`}
@@ -233,20 +331,6 @@ export default function App() {
               {page === p.id && <span className="nav-active" />}
             </a>
           ))}
-        </nav>
-        <div className="nav-label future-label">科研管理</div>
-        <nav>
-          <a
-            href="#extensions"
-            className={page === 'extensions' ? 'selected' : ''}
-            onClick={() => {
-              setPage('extensions');
-              setMobileOpen(false);
-            }}
-          >
-            <Layers3 size={19} />
-            扩展规划<span className="nav-badge">后续</span>
-          </a>
         </nav>
         <div className="sidebar-bottom">
           <div className="privacy-icon">
@@ -328,14 +412,16 @@ export default function App() {
                 {showingDemo
                   ? '示例工作区 · 仅用于体验功能'
                   : desktopProject
-                    ? '当前工作区 · 自动保存在本机'
+                    ? `当前项目 · ${projectName}${dirty ? ' · 未保存 ( * )' : ' · 已保存'}`
                     : '当前工作区 · 自动保存在此浏览器'}
               </span>
             </div>
             <div className="status-actions">
               {desktopProject && (
                 <>
+                  <button onClick={() => void newProject()}>新建项目</button>
                   <button onClick={() => void saveProjectFile(false)}>保存项目</button>
+                  <button onClick={() => void saveProjectFile(true)}>另存为</button>
                   <button onClick={() => void openProjectFile()}>打开项目</button>
                 </>
               )}
@@ -399,48 +485,6 @@ export default function App() {
           {page === 'calibration' && <Calibration onImport={() => openImport('calibration')} />}
           {page === 'gradient' && <Gradient />}
           {page === 'recognition' && <Recognition />}
-          {page === 'extensions' && (
-            <div className="extension-grid">
-              {[
-                {
-                  icon: NotebookPen,
-                  title: '实验记录',
-                  tag: 'EXPERIMENTS',
-                  text: '关联原始数据、实验条件、分析结果与图表，保留每次实验的完整过程。',
-                  fields: '实验名称 · 条件 · 数据文件 · 结果快照',
-                },
-                {
-                  icon: FolderOpen,
-                  title: '项目管理',
-                  tag: 'PROJECTS',
-                  text: '按研究主题组织实验和文献，支持后续跨实验结果比较。',
-                  fields: '项目名称 · 描述 · 实验列表 · 文献列表',
-                },
-                {
-                  icon: BookOpen,
-                  title: '文献数据库',
-                  tag: 'LITERATURE',
-                  text: '保存论文信息、DOI、研究标签及检测性能，与实验关联。',
-                  fields: '题目 · 作者 · 期刊 · DOI · 性能指标',
-                },
-              ].map((item) => (
-                <section className="panel extension-card" key={item.title}>
-                  <div className="extension-icon">
-                    <item.icon size={25} />
-                  </div>
-                  <small>{item.tag}</small>
-                  <h2>{item.title}</h2>
-                  <p>{item.text}</p>
-                  <div>{item.fields}</div>
-                  <span className="planned-badge">已预留接口 · 后续实现</span>
-                </section>
-              ))}
-              <div className="extension-foot">
-                <Database size={19} />
-                <span>当前版本专注数据分析。科研管理模块将在后续接入存储与服务。</span>
-              </div>
-            </div>
-          )}
           <footer className="page-footer">
             <span>Perovskite Lab</span>
             <span>从原始数据，到可复核的结果。</span>

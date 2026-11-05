@@ -6,6 +6,12 @@ import { Worksheet } from '../components/Worksheet-v0.2.0-2026.10.19';
 import { ChartPanel } from '../components/ChartPanel';
 import { ErrorNote, Field, SectionHead } from '../components/ui';
 import { columnLetter, type WorksheetColumn } from '../domain/worksheet-v0.2.0-2026.10.19';
+import {
+  structureAxis,
+  structureCount,
+  structureStart,
+  type WorksheetStructureAction,
+} from '../domain/worksheet-structure-2026.11.5';
 import { createSheetWithPayload, type RecognitionSheetPayload } from '../domain/workbook';
 import { uid, type ChartStyle, type PlotData } from '../domain/types';
 import { chartSVG } from '../domain/chart';
@@ -71,10 +77,76 @@ export function Recognition() {
   const insertProbe = (index?: number) => {
     try { change(addProbe(d, index)); } catch (e) { notify((e as Error).message); }
   };
-  const insertRow = (at: number) => {
+  const insertRow = (at: number, count = 1) => {
     const rows = [...d.rows];
-    rows.splice(Math.min(at, rows.length), 0, { id: uid(), sample: '', ion: '', replicate: '', batchId: '', values: {} });
+    rows.splice(Math.min(Math.max(0, at), rows.length), 0,
+      ...Array.from({ length: count }, () => ({ id: uid(), sample: '', ion: '', replicate: '', batchId: '', values: {} })));
     change({ ...d, rows });
+  };
+  const PROBE_START = 3;
+  const PROBE_END = PROBE_START + d.probes.length;
+  /** 删除若干探针列：同步清理每行的猝灭率与批次数值。 */
+  const deleteProbeColumns = (start: number, count: number) => {
+    const ids = new Set(d.probes.slice(start - PROBE_START, start - PROBE_START + count).map((p) => p.id));
+    const omit = (values: Record<string, string>) =>
+      Object.fromEntries(Object.entries(values).filter(([key]) => !ids.has(key)));
+    change({
+      ...d,
+      probes: d.probes.filter((p) => !ids.has(p.id)),
+      rows: d.rows.map((row) => ({ ...row, values: omit(row.values) })),
+      batches: d.batches.map((batch) => ({ ...batch, values: omit(batch.values) })),
+    });
+  };
+  /** 工作表行列结构操作：行 = 实验行，列 = 探针列（必需列与操作列受保护）。 */
+  const structure = (action: WorksheetStructureAction) => {
+    if (!editable) return;
+    if (structureAxis(action) === 'row') {
+      if (action.type === 'delete-row') {
+        const start = structureStart(action);
+        const count = structureCount(action.count);
+        change({ ...d, rows: d.rows.filter((_, index) => index < start || index >= start + count) });
+        return;
+      }
+      insertRow(
+        action.type === 'append-row' ? d.rows.length : structureStart(action),
+        structureCount(action.count),
+      );
+      return;
+    }
+    if (action.type === 'delete-column') {
+      deleteProbeColumns(structureStart(action), structureCount(action.count));
+      return;
+    }
+    const at =
+      action.type === 'append-column'
+        ? d.probes.length
+        : Math.max(0, Math.min(structureStart(action) - PROBE_START, d.probes.length));
+    const count = structureCount(action.count);
+    try {
+      let next = d;
+      for (let index = 0; index < count; index++) next = addProbe(next, at + index);
+      change(next);
+    } catch (e) {
+      notify((e as Error).message);
+    }
+  };
+  const canStructure = (action: WorksheetStructureAction) => {
+    if (!editable) return '已保存的结果 Sheet 为只读，不能修改结构';
+    if (structureAxis(action) === 'row') return null;
+    const start = structureStart(action);
+    const count = structureCount(action.count);
+    if (action.type === 'delete-column') {
+      if (start < PROBE_START) return '样本 ID、离子种类、平行编号是必需列，不能删除';
+      if (start >= PROBE_END) return '「删除行」是操作列，不能删除';
+      if (start + count > PROBE_END) return '只能删除探针列，必需列不能一起删除';
+      if (d.probes.length - count < 1) return '每个 Sheet 至少保留一个探针';
+      return null;
+    }
+    if (action.type !== 'append-column' && (start < PROBE_START || start > PROBE_END))
+      return '探针列只能插入在前三个必需列之后、「删除行」列之前';
+    if (d.probes.length + count > RECOGNITION_LIMITS.probes)
+      return `每个 Sheet 最多 ${RECOGNITION_LIMITS.probes} 个探针`;
+    return null;
   };
   const jump = (issue: CellIssue) => {
     setView('猝灭率');
@@ -209,9 +281,8 @@ export function Recognition() {
           columns={columns} rows={rows} minRows={Math.max(1, rows.length)} allowAddRows={editable}
           externalHistory={editable ? externalHistory : undefined}
           onChange={editable ? tableChange : undefined}
-          onInsertRow={editable ? insertRow : undefined}
-          onAddColumn={editable ? () => insertProbe() : undefined}
-          onInsertColumn={editable ? (c) => insertProbe(Math.max(0, c - 3)) : undefined}
+          onStructure={editable ? structure : undefined}
+          canStructure={canStructure}
           onMoveRow={editable ? (from, to) => {
             const next = [...d.rows]; next.splice(to, 0, next.splice(from, 1)[0]); change({ ...d, rows: next });
           } : undefined}

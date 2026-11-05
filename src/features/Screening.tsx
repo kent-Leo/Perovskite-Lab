@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, ChevronUp, ChevronDown, Upload } from 'lucide-react';
 import { useWorkspace } from '../state/workspace';
+import { useSheetHistory } from '../state/useSheetHistory-2026.11.5';
 import { useWorkbook } from '../state/useWorkbook';
 import {
   roles,
   responses,
   uid,
   type ChartStyle,
+  type ObjectRow,
   type PlotData,
   type ResponseMode,
   type Role,
@@ -22,6 +24,12 @@ import { ChartPanel } from '../components/ChartPanel';
 import { ErrorNote, Field, Metric, SectionHead } from '../components/ui';
 import { WorkspaceWorksheet as Worksheet } from '../components/WorkspaceWorksheet-v0.3.1-2026.10.19';
 import type { WorksheetColumn } from '../domain/worksheet-v0.2.0-2026.10.19';
+import {
+  structureAxis,
+  structureCount,
+  structureStart,
+  type WorksheetStructureAction,
+} from '../domain/worksheet-structure-2026.11.5';
 import { sheetChartTitle, type ScreeningSheetPayload } from '../domain/workbook';
 import { exportExcel } from '../services/download';
 
@@ -79,6 +87,22 @@ export function Screening({ onImport }: { onImport: () => void }) {
   const { w, update, notify } = useWorkspace();
   const wb = useWorkbook('screening');
   const [viewMode, setViewMode] = useState<PlotViewMode>('active');
+  // 整表撤销 / 重做：单元格编辑与行列结构操作共用一条历史。
+  const history = useSheetHistory<{ objects: ObjectRow[]; blankId: string }>(
+    wb.activeId,
+    () => ({ objects: w.objects.map((o) => ({ ...o })), blankId: w.blankId }),
+    (snapshot) => update({ objects: snapshot.objects, blankId: snapshot.blankId }),
+  );
+  const commit = (patch: Partial<typeof w>) => {
+    history.record();
+    update(patch);
+  };
+  const externalHistory = {
+    canUndo: history.canUndo,
+    canRedo: history.canRedo,
+    undo: history.undo,
+    redo: history.redo,
+  };
   const result = useMemo(
     () =>
       screeningChart(
@@ -102,23 +126,45 @@ export function Screening({ onImport }: { onImport: () => void }) {
     if (to < 0 || to >= w.objects.length) return;
     const rows = [...w.objects];
     rows.splice(to, 0, rows.splice(from, 1)[0]);
-    update({ objects: rows });
+    commit({ objects: rows });
   }
-  /** Insert a blank object row at any position (arbitrary-position row insertion). */
-  function insertObject(index: number) {
-    const rows = [...w.objects];
-    const at = Math.max(0, Math.min(index, rows.length));
-    rows.splice(at, 0, {
+  function blankObject(index: number): ObjectRow {
+    return {
       id: uid(),
-      name: `对象 ${w.objects.length + 1}`,
+      name: `对象 ${w.objects.length + index + 1}`,
       role: 'other',
       concentration: '',
       unit: w.objects[0]?.unit ?? 'µmol/L',
       intensity: '',
       notes: '',
-    });
-    update({ objects: rows });
+    };
   }
+  /** 行结构操作：插入 / 追加 / 删除对象行，同步清理空白参考引用。 */
+  function structure(action: WorksheetStructureAction) {
+    const rows = w.objects;
+    if (action.type === 'delete-row') {
+      const start = structureStart(action);
+      const count = structureCount(action.count);
+      const removed = new Set(rows.slice(start, start + count).map((row) => row.id));
+      commit({
+        objects: rows.filter((_, index) => index < start || index >= start + count),
+        blankId: removed.has(w.blankId) ? '' : w.blankId,
+      });
+      return;
+    }
+    if (structureAxis(action) === 'column') return;
+    const at =
+      action.type === 'append-row'
+        ? rows.length
+        : Math.max(0, Math.min(structureStart(action), rows.length));
+    const count = structureCount(action.count);
+    const added = Array.from({ length: count }, (_, index) => blankObject(index));
+    commit({ objects: [...rows.slice(0, at), ...added, ...rows.slice(at)] });
+  }
+  const canStructure = (action: WorksheetStructureAction) =>
+    structureAxis(action) === 'column'
+      ? '分析对象的列固定（含只读计算结果），不能插入或删除；请使用行操作'
+      : null;
   const targets = w.objects.filter((o) => o.role === 'target');
   return (
     <>
@@ -207,22 +253,7 @@ export function Screening({ onImport }: { onImport: () => void }) {
               </button>
               <button
                 className="small-button primary"
-                onClick={() =>
-                  update({
-                    objects: [
-                      ...w.objects,
-                      {
-                        id: uid(),
-                        name: `对象 ${w.objects.length + 1}`,
-                        role: 'other',
-                        concentration: '',
-                        unit: 'µmol/L',
-                        intensity: '',
-                        notes: '',
-                      },
-                    ],
-                  })
-                }
+                onClick={() => structure({ type: 'append-row', count: 1 })}
               >
                 <Plus size={15} />
                 添加对象
@@ -241,7 +272,9 @@ export function Screening({ onImport }: { onImport: () => void }) {
           onCreateSheet={wb.create}
           onDeleteSheet={wb.remove}
           onMoveRow={move}
-          onInsertRow={insertObject}
+          onStructure={structure}
+          canStructure={canStructure}
+          externalHistory={externalHistory}
           minRows={Math.max(1, w.objects.length)}
           columns={
             [
@@ -288,7 +321,7 @@ export function Screening({ onImport }: { onImport: () => void }) {
             '',
           ])}
           onChange={(rows) =>
-            update({
+            commit({
               objects: rows.map((r, i) => ({
                 id: w.objects[i]?.id ?? uid(),
                 name: r[0],
@@ -330,12 +363,7 @@ export function Screening({ onImport }: { onImport: () => void }) {
                 </button>
                 <button
                   aria-label={`删除对象 ${i + 1}`}
-                  onClick={() =>
-                    update({
-                      objects: w.objects.filter((r) => r.id !== o.id),
-                      blankId: w.blankId === o.id ? '' : w.blankId,
-                    })
-                  }
+                  onClick={() => structure({ type: 'delete-row', index: i, count: 1 })}
                 >
                   <Trash2 size={15} />
                 </button>

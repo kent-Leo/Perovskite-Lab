@@ -17,12 +17,26 @@ export type ProjectCommand =
   | { type: 'save' }
   | { type: 'save-as' }
   | { type: 'open' }
-  | { type: 'loaded'; path: string; content: string };
+  | { type: 'new' }
+  | { type: 'loaded'; path: string; content: string }
+  | { type: 'load-error'; path: string; error: string };
+
+export type InitialProjectState = {
+  path: string | null;
+  content?: string;
+  /** 启动参数/双击显式指定了项目文件：此时文件内容优先，草稿不再参与恢复。 */
+  explicit: boolean;
+};
 
 export type DesktopProjectBridge = {
   isDesktop: true;
+  initial: InitialProjectState;
   save(content: string, saveAs?: boolean): Promise<{ canceled: boolean; path?: string; error?: string }>;
   open(): Promise<{ canceled: boolean; path?: string; content?: string; error?: string }>;
+  adopt(path: string): Promise<{ ok: boolean; path?: string; error?: string }>;
+  newProject(): Promise<{ ok: boolean; error?: string }>;
+  setDirty(dirty: boolean): Promise<boolean>;
+  confirmUnsaved(name?: string): Promise<'save' | 'discard' | 'cancel'>;
   setCommandHandler(handler: ((command: ProjectCommand) => void) | null): void;
 };
 
@@ -32,6 +46,35 @@ export const desktopProject: DesktopProjectBridge | undefined = (
 ).desktopProject;
 
 export const isDesktopApp = desktopProject?.isDesktop === true;
+
+/** 浏览器里的自动保存键（保持旧版本工作区可继续读取）。 */
+export const BROWSER_STORAGE_KEY = 'perovskite-lab-workspace-v1';
+const DRAFT_PREFIX = 'perovskite-lab-draft-v1';
+
+/**
+ * 桌面端草稿按「项目身份」分开存放：
+ * 未落盘的新项目共用 `untitled`，已保存项目按绝对路径区分。
+ * 这样项目 A 的自动恢复数据永远不会被项目 B 覆盖。
+ */
+export function draftStorageKey(projectPath: string | null | undefined): string {
+  return projectPath ? `${DRAFT_PREFIX}:file:${projectPath}` : `${DRAFT_PREFIX}:untitled`;
+}
+
+export function readDraft(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+export function clearDraft(key: string) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* 隐私模式等场景下无法清理，忽略即可 */
+  }
+}
 
 export function serializeProject(workspace: Workspace, savedAt = new Date()): string {
   const file: ProjectFile = {

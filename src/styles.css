@@ -227,17 +227,6 @@ nav a.selected {
   background: #37734b;
   border-radius: 50%;
 }
-.nav-badge {
-  margin-left: auto;
-  font-size: 0.65rem;
-  border: 1px solid #56705e;
-  border-radius: 4px;
-  padding: 2px 4px;
-  color: #91ad9d;
-}
-.future-label {
-  margin-top: 35px;
-}
 .sidebar-bottom {
   margin-top: auto;
   padding: 45px 14px 0;
@@ -1240,59 +1229,6 @@ tbody tr:last-child td {
   color: #4c7b55;
   font-weight: 500;
 }
-.extension-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 20px;
-  margin-top: 24px;
-}
-.extension-card {
-  padding: 30px 26px;
-}
-.extension-icon {
-  color: #468462;
-  margin-bottom: 35px;
-}
-.extension-card > small {
-  font-size: 0.65rem;
-  letter-spacing: 0.16em;
-  color: #8aa790;
-}
-.extension-card h2 {
-  font-size: 1.25rem;
-  margin-top: 9px;
-}
-.extension-card p {
-  font-size: 0.85rem;
-  line-height: 1.9;
-  margin-top: 18px;
-  color: #7e9584;
-}
-.extension-card > div:not(.extension-icon) {
-  font-size: 0.72rem;
-  line-height: 2;
-  color: #9caf9f;
-  margin-top: 30px;
-  border-top: 1px solid var(--line);
-  padding-top: 20px;
-}
-.planned-badge {
-  display: inline-block;
-  border: 1px solid #dce8dc;
-  color: #729276;
-  border-radius: 5px;
-  padding: 5px 9px;
-  font-size: 0.7rem;
-  margin-top: 22px;
-}
-.extension-foot {
-  grid-column: 1/-1;
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  color: #879f8b;
-  font-size: 0.8rem;
-}
 .page-footer {
   display: flex;
   justify-content: space-between;
@@ -1613,12 +1549,6 @@ tbody tr:last-child td {
   .gradient-form > .method-note {
     grid-column: 1/-1;
   }
-  .extension-grid {
-    grid-template-columns: 1fr;
-  }
-  .extension-card {
-    margin: 0;
-  }
   .workspace-status {
     flex-direction: column;
     gap: 8px;
@@ -1867,7 +1797,6 @@ table,
 .brand small,
 .eyebrow,
 .version-label,
-.nav-badge,
 .date-label,
 .metrics-row .metric > span,
 .section-head p,
@@ -1881,8 +1810,6 @@ table,
 .import-strip > div,
 .import-strip small,
 .page-footer,
-.planned-badge,
-.extension-card > small,
 .preview-label span,
 .field small {
   font-size: 0.75rem;

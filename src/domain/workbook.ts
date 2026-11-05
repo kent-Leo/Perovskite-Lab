@@ -406,7 +406,7 @@ function normalizeRawSheet(
     input.grid.every(
       (row) =>
         Array.isArray(row) &&
-        row.length >= 3 &&
+        row.length >= 1 &&
         row.every((value) => typeof value === 'string'),
     );
   let grid = input.grid;
@@ -414,7 +414,7 @@ function normalizeRawSheet(
     const source = input.grid.map((row) =>
       Array.isArray(row) ? row.map((value) => String(value ?? '')) : [],
     );
-    const width = Math.max(3, ...source.map((row) => row.length));
+    const width = Math.max(1, ...source.map((row) => row.length));
     const height = Math.max(6, source.length);
     grid = Array.from({ length: height }, (_, row) =>
       Array.from({ length: width }, (_, column) => source[row]?.[column] ?? ''),

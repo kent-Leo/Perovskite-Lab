@@ -59,25 +59,67 @@ function WorksheetDemo() {
         onMetadataChange={(c, field, value) =>
           setColumns((all) => all.map((col, i) => (i === c ? { ...col, [field]: value } : col)))
         }
-        onAddColumn={() => {
-          if (
-            columns.length >= WORKSHEET_LIMITS.columns ||
-            Math.max(6, rows.length) * (columns.length + 1) > WORKSHEET_LIMITS.cells
-          ) {
-            setNotice('已达到工作表列数或单元格上限');
+        onStructure={(action) => {
+          if (action.type === 'append-column' || action.type === 'insert-column') {
+            if (
+              columns.length >= WORKSHEET_LIMITS.columns ||
+              Math.max(6, rows.length) * (columns.length + 1) > WORKSHEET_LIMITS.cells
+            ) {
+              setNotice('已达到工作表列数或单元格上限');
+              return;
+            }
+            const at =
+              action.type === 'append-column'
+                ? columns.length
+                : Math.max(0, Math.min(action.index, columns.length));
+            setColumns((all) => [
+              ...all.slice(0, at),
+              {
+                key: `sample-${all.length}-${at}`,
+                title: `Sample ${all.length - 1}`,
+                designation: 'Y',
+                type: 'number',
+                unit: 'a.u.',
+              },
+              ...all.slice(at),
+            ]);
+            setRows((all) => all.map((row) => [...row.slice(0, at), '', ...row.slice(at)]));
+            setNotice('');
             return;
           }
-          setColumns((all) => [
-            ...all,
-            {
-              key: `sample-${all.length}`,
-              title: `Sample ${all.length - 1}`,
-              designation: 'Y',
-              type: 'number',
-              unit: 'a.u.',
-            },
-          ]);
-          setNotice('');
+          if (action.type === 'delete-column') {
+            const start = Math.max(0, Math.min(action.index, columns.length - 1));
+            if (columns[start]?.readOnly) {
+              setNotice('只读计算列不能删除');
+              return;
+            }
+            if (columns.length <= 1) {
+              setNotice('至少保留一列');
+              return;
+            }
+            setColumns((all) => all.filter((_, index) => index !== start));
+            setRows((all) => all.map((row) => row.filter((_, index) => index !== start)));
+            setNotice('');
+            return;
+          }
+          if (action.type === 'insert-row' || action.type === 'append-row') {
+            const at =
+              action.type === 'append-row'
+                ? Math.max(6, rows.length)
+                : Math.max(0, Math.min(action.index, rows.length));
+            const count = Math.max(1, Math.min(action.count, 200));
+            setRows((all) => [
+              ...all.slice(0, at),
+              ...Array.from({ length: count }, () => columns.map(() => '')),
+              ...all.slice(at),
+            ]);
+            return;
+          }
+          if (action.type === 'delete-row') {
+            const start = Math.max(0, Math.min(action.index, rows.length));
+            const count = Math.max(1, action.count);
+            setRows((all) => all.filter((_, index) => index < start || index >= start + count));
+          }
         }}
       />
       <p className="worksheet-demo-note">

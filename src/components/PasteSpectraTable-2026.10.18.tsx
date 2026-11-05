@@ -1,10 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ClipboardPaste, Plus, ArrowDownToLine, Trash2 } from 'lucide-react';
 import { useWorkspace } from '../state/workspace';
+import { useSheetHistory } from '../state/useSheetHistory-2026.11.5';
 import { useWorkbook } from '../state/useWorkbook';
-import { palette, type ColumnMetadata } from '../domain/types';
+import { palette, type ColumnMetadata, type Spectrum } from '../domain/types';
 import { blankGrid, defaultRawMapping, defaultRawSheet } from '../domain/workbook';
-import { insertRawSheetColumn, insertRawSheetRow } from '../domain/raw-sheet-edit';
+import {
+  deleteRawSheetColumns,
+  deleteRawSheetRows,
+  insertRawSheetColumns,
+  insertRawSheetRows,
+} from '../domain/raw-sheet-edit';
+import {
+  structureAxis,
+  structureCount,
+  structureStart,
+  STRUCTURE_LIMITS,
+  type WorksheetStructureAction,
+} from '../domain/worksheet-structure-2026.11.5';
 import {
   rawColumnIndex,
   rawColumnKey,
@@ -26,6 +39,14 @@ import { ErrorNote, Field } from './ui';
 import { WorkspaceWorksheet as Worksheet } from './WorkspaceWorksheet-v0.3.1-2026.10.19';
 import { pasteWorksheetRange, type WorksheetColumn } from '../domain/worksheet-v0.2.0-2026.10.19';
 
+type RawHistory = {
+  rawSheet: { grid: string[][]; mapping: Mapping };
+  metadata: Record<string, ColumnMetadata>;
+  columnSpectra: Record<string, string>;
+  spectra: Spectrum[];
+  rawSpectra: Spectrum[];
+};
+
 export function PasteSpectraTable() {
   const { w, update, notify } = useWorkspace();
   const wb = useWorkbook('raw');
@@ -33,6 +54,39 @@ export function PasteSpectraTable() {
     [plotted, setPlotted] = useState(false);
   const batch = useRef(new Map<number, string>());
   const source = `粘贴光谱-${dateStamp()}`;
+  // 整表撤销 / 重做：单元格编辑、行列结构、绘图与列设置共用一条历史。
+  const history = useSheetHistory<RawHistory>(
+    wb.activeId,
+    () => {
+      const current = w.rawSheet ?? defaultRawSheet(w.calUnit);
+      return {
+        rawSheet: {
+          grid: current.grid.map((row) => [...row]),
+          mapping: { ...current.mapping, ys: [...current.mapping.ys], meta: [...(current.mapping.meta ?? [])] },
+        },
+        metadata: Object.fromEntries(
+          Object.entries(w.sheetMetadata?.[wb.activeId] ?? {}).map(([key, value]) => [key, { ...value }]),
+        ),
+        columnSpectra: { ...(w.rawColumnSpectra ?? {}) },
+        spectra: w.spectra.map((spectrum) => ({ ...spectrum })),
+        rawSpectra: (w.rawSpectra ?? []).map((spectrum) => ({ ...spectrum })),
+      };
+    },
+    (snapshot) =>
+      update((prev) => ({
+        rawSheet: snapshot.rawSheet,
+        rawColumnSpectra: snapshot.columnSpectra,
+        sheetMetadata: { ...prev.sheetMetadata, [wb.activeId]: snapshot.metadata },
+        spectra: snapshot.spectra,
+        rawSpectra: snapshot.rawSpectra,
+      })),
+  );
+  const externalHistory = {
+    canUndo: history.canUndo,
+    canRedo: history.canRedo,
+    undo: history.undo,
+    redo: history.redo,
+  };
   // The draft grid/mapping of the active sheet live in the workspace (w.rawSheet),
   // so editing a sheet and switching sheets persist the table as-is.
   const sheet = useMemo(
@@ -104,6 +158,7 @@ export function PasteSpectraTable() {
     }));
   }
   const patch = (changes: Partial<Mapping>) => {
+    history.record();
     updateMapping({ ...mapping, ...changes });
     setError('');
   };
@@ -123,6 +178,7 @@ export function PasteSpectraTable() {
   }
   function setColor(column: number, color: string) {
     const sheetId = wb.activeId;
+    history.record();
     update((prev) => {
       const key = rawColumnKey(column),
         id = prev.rawColumnSpectra?.[key];
@@ -140,44 +196,87 @@ export function PasteSpectraTable() {
       };
     });
   }
-  /** Insert a blank row above the active cell (works at any position). */
-  function insertRow(row: number) {
+  /**
+   * 行列结构操作：插入 / 追加 / 删除都会同步平移波长列、强度列、列头元数据与
+   * 列→光谱映射；删除强度列时一并移除对应光谱。
+   */
+  function structure(action: WorksheetStructureAction) {
+    const sheetId = wb.activeId;
+    const width = grid[0]?.length ?? 3;
+    const start = action.type.startsWith('append') ? -1 : structureStart(action);
+    const count = structureCount(action.count);
     try {
-      update((prev) => {
-        const current = prev.rawSheet ?? defaultRawSheet(prev.calUnit);
-        return { rawSheet: insertRawSheetRow(current, row) };
-      });
-      setError('');
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
-  /** Insert a blank column left of the active cell, shifting mapping and header metadata. */
-  function insertColumn(column: number) {
-    try {
-      // Column indexes shift, so drop the cached column→spectrum ids; the persisted
-      // rawColumnSpectra mapping is re-keyed below and is used on the next plot.
+      if (structureAxis(action) === 'row') {
+        const at = action.type === 'append-row' ? grid.length : start;
+        const next =
+          action.type === 'delete-row'
+            ? deleteRawSheetRows(sheet, at, count)
+            : insertRawSheetRows(sheet, at, count);
+        history.record();
+        update({ rawSheet: next });
+        setError('');
+        return;
+      }
+      // 列号会变化，缓存的列→光谱 id 立即失效。
       batch.current = new Map();
-      const sheetId = wb.activeId;
-      update((prev) => {
-        const current = prev.rawSheet ?? defaultRawSheet(prev.calUnit);
-        const result = insertRawSheetColumn(
-          current,
-          prev.sheetMetadata?.[sheetId],
-          prev.rawColumnSpectra,
-          column,
+      if (action.type === 'delete-column') {
+        const result = deleteRawSheetColumns(
+          sheet,
+          w.sheetMetadata?.[sheetId],
+          w.rawColumnSpectra,
+          start,
+          count,
         );
-        return {
+        const removed = new Set(
+          result.removedColumns
+            .map((column) => w.rawColumnSpectra?.[rawColumnKey(column)])
+            .filter((id): id is string => !!id),
+        );
+        history.record();
+        update((prev) => ({
           rawSheet: result.rawSheet,
           rawColumnSpectra: result.columnSpectra,
           sheetMetadata: { ...prev.sheetMetadata, [sheetId]: result.metadata },
-        };
-      });
+          spectra: prev.spectra.filter((sample) => !removed.has(sample.id)),
+          rawSpectra: (prev.rawSpectra ?? []).filter((sample) => !removed.has(sample.id)),
+        }));
+      } else {
+        const result = insertRawSheetColumns(
+          sheet,
+          w.sheetMetadata?.[sheetId],
+          w.rawColumnSpectra,
+          action.type === 'append-column' ? width : start,
+          count,
+        );
+        history.record();
+        update((prev) => ({
+          rawSheet: result.rawSheet,
+          rawColumnSpectra: result.columnSpectra,
+          sheetMetadata: { ...prev.sheetMetadata, [sheetId]: result.metadata },
+        }));
+      }
       setError('');
     } catch (e) {
       setError((e as Error).message);
     }
   }
+  /** 结构操作的可执行性：波长列、最后一列与列数上限受保护。 */
+  const canStructure = (action: WorksheetStructureAction) => {
+    if (structureAxis(action) === 'row') return null;
+    const width = grid[0]?.length ?? 3;
+    const start = structureStart(action);
+    const count = structureCount(action.count);
+    if (action.type === 'delete-column') {
+      if (start <= mapping.x && mapping.x < start + count)
+        return '波长列是绘图的必需列，不能删除；请先改用其他列作为波长列';
+      if (start + count > width) return '删除范围超出表格末列';
+      if (width - count < 1) return '工作表至少保留一列';
+      return null;
+    }
+    if (width + count > STRUCTURE_LIMITS.columns)
+      return `原始光谱表最多 ${STRUCTURE_LIMITS.columns} 列`;
+    return null;
+  };
   function grow(extraRows: number, extraColumns: number) {
     try {
       const nextGrid = growPasteGrid(
@@ -185,6 +284,7 @@ export function PasteSpectraTable() {
         grid.length + extraRows,
         (grid[0]?.length ?? 3) + extraColumns,
       );
+      history.record();
       updateMapping(syncRawMapping(nextGrid, mapping), nextGrid);
       setError('');
     } catch (e) {
@@ -193,6 +293,7 @@ export function PasteSpectraTable() {
   }
   function plot() {
     if (!result.value) return;
+    history.record();
     const r = result.value;
     const nextBatch = new Map(batch.current);
     const metadata = w.sheetMetadata?.[wb.activeId] ?? {};
@@ -270,6 +371,7 @@ export function PasteSpectraTable() {
           disabled={!rows.length}
           onClick={() => {
             // Only the current sheet draft is cleared; plotted spectra stay.
+            history.record();
             update((prev) => ({ rawSheet: defaultRawSheet(prev.calUnit) }));
             setError('');
             setPlotted(false);
@@ -317,6 +419,7 @@ export function PasteSpectraTable() {
           className="small-button"
           disabled={!rows.length}
           onClick={() => {
+            history.record();
             updateMapping({ ...suggestPasteMapping(grid, w.calUnit), allowEmptyIntensity: mapping.allowEmptyIntensity });
             setError('');
           }}
@@ -378,11 +481,15 @@ export function PasteSpectraTable() {
           }));
           return pasteWorksheetRange(grid, cols, at, text);
         }}
+        onStructure={structure}
+        canStructure={canStructure}
+        externalHistory={externalHistory}
         onChange={(next, change) => {
+          history.record();
           const nextGrid = growPasteGrid(
             next,
             Math.max(6, next.length),
-            Math.max(3, next[0]?.length ?? grid[0]?.length ?? 0),
+            Math.max(1, next[0]?.length ?? grid[0]?.length ?? 0),
           );
           if (
             change.kind === 'paste' &&
@@ -398,9 +505,6 @@ export function PasteSpectraTable() {
           }
           setError('');
         }}
-        onAddColumn={() => grow(0, 1)}
-        onInsertRow={insertRow}
-        onInsertColumn={insertColumn}
         cellLabel={(row, col) => `原始数据第 ${row + 1} 行第 ${col + 1} 列`}
         invalidCell={(row, col) => invalidCells.has(`${row}:${col}`)}
       />

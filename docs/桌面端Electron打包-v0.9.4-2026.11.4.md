@@ -151,6 +151,14 @@ APPLE_TEAM_ID
 
 **Windows**：配置 `CSC_LINK` / `CSC_KEY_PASSWORD`（.pfx）或 Azure Trusted Signing 的环境变量，electron-builder 会自动签名 `Perovskite Lab.exe`、卸载器与安装包本身。
 
+## 9.1 项目文件工作方式（v1.1.0）
+
+项目文件的生命周期已在 `docs/项目文件与表格结构操作-2026.11.5.md` 中细化，这里只列与打包相关的结论：
+
+- 路径只存在主进程，渲染进程通过受限的 `window.desktopProject` 读写；新增 `adopt` / `newProject` / `setDirty` / `confirmUnsaved` 与同步的 `initial` 启动状态。
+- `.plab` 写入改为「临时文件 + rename」原子替换，写入中断不会损坏已有项目文件。
+- `npm run test:desktop` 默认跑仓库里的 Electron + 最新 `dist/`（无需先打包），`APP_PATH=...` 或 `SMOKE_PACKAGED=1` 时才跑 `release/` 里的安装包。
+
 ## 10. 验收清单
 
 - [ ] `npm run build:app` 无类型错误，`dist-electron/main.cjs` 与 `preload.cjs` 生成
@@ -161,6 +169,10 @@ APPLE_TEAM_ID
 - [ ] 图表中文字体渲染正常（导出字体走 `app://local/fonts/*`）
 - [ ] `⌘S` 保存项目 → 关闭重开 → `⌘O` 打开，工作区完全一致
 - [ ] 双击 `.plab` 能直接唤起应用并载入该项目
+- [ ] 保存 A / 另存为 B 后，打开 A 显示 A、打开 B 显示 B，互不覆盖
+- [ ] 有未保存修改时打开新项目，可选择保存 / 放弃 / 取消，取消后路径与数据不变
+- [ ] 损坏的 `.plab` 只提示错误，不改变当前项目
+- [ ] 窗口标题显示项目名，未保存时带 `*`
 - [ ] `npm run test:desktop` 冒烟测试通过
 - [ ] `npm run dist:mac` 生成 dmg，拖入 Applications 后可启动
 - [ ] `npm run dist:win` 生成 exe，在 Windows 上安装后可启动（macOS 上无法自测）
