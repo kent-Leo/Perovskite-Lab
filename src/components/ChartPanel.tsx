@@ -1,11 +1,22 @@
 import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { Download, SlidersHorizontal, Image, FileCode2, FileText } from 'lucide-react';
 import { chartSVG } from '../domain/chart';
-import { SONG_FONT_FAMILY, SERIF_FONT_FAMILY } from '../domain/chart-fonts-2026.11.3';
+import {
+  CJK_FONT_OPTIONS,
+  LATIN_FONT_OPTIONS,
+  SONG_FONT_FAMILY,
+  SERIF_FONT_FAMILY,
+  TIMES_FONT_FAMILY,
+  effectiveFonts,
+  latinExportNote,
+  previewRuns,
+} from '../domain/chart-fonts-2026.11.3';
 import { chartAxes, axisSides, axisNames, type AxisSide, type AxisStyle, type ChartStyle, type PlotData } from '../domain/types';
 import { exportChart } from '../services/export';
 import { useWorkspace } from '../state/workspace';
 import { Empty, ErrorNote, Field } from './ui';
+/** 中西文混排预览文本：英文 / 公式 / 中文 / 单位一次覆盖。 */
+const MIXED_FONT_SAMPLE = 'CsPbBr3 钙钛矿量子点 Intensity (a.u.)';
 export function ChartPanel({
   kind,
   data,
@@ -266,10 +277,17 @@ export function ChartPanel({
                   />
                 </Field>
               </div>
-              <Field label="字体">
+              <Field label="字体" hint="同时作为中西文的默认字体；单独设置后以中文 / 西文选择为准">
                 <select
                   value={style.fontFamily}
-                  onChange={(e) => set({ fontFamily: e.target.value })}
+                  onChange={(e) =>
+                    // 选择基础字体等于重设整套排版：中西文都回到该字体。
+                    set({
+                      fontFamily: e.target.value,
+                      cjkFontFamily: undefined,
+                      latinFontFamily: undefined,
+                    })
+                  }
                 >
                   <option>Arial</option>
                   <option>Times New Roman</option>
@@ -278,6 +296,61 @@ export function ChartPanel({
                   <option>Perovskite Lab Sans</option>
                 </select>
               </Field>
+              <div className="form-grid">
+                <Field label="中文字体" hint="仅影响中文、中文标点与全角字符">
+                  <select
+                    value={style.cjkFontFamily ?? ''}
+                    onChange={(e) => set({ cjkFontFamily: e.target.value || undefined })}
+                  >
+                    <option value="">跟随上方字体</option>
+                    {CJK_FONT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="西文字体" hint="英文、数字、西文标点与符号">
+                  <select
+                    value={style.latinFontFamily ?? ''}
+                    onChange={(e) => set({ latinFontFamily: e.target.value || undefined })}
+                  >
+                    <option value="">跟随上方字体</option>
+                    {LATIN_FONT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+              <div className="font-mix">
+                <button
+                  type="button"
+                  className="small-button"
+                  aria-pressed={
+                    style.cjkFontFamily === SONG_FONT_FAMILY &&
+                    style.latinFontFamily === TIMES_FONT_FAMILY
+                  }
+                  onClick={() =>
+                    set({ cjkFontFamily: SONG_FONT_FAMILY, latinFontFamily: TIMES_FONT_FAMILY })
+                  }
+                >
+                  宋体 + Times New Roman
+                </button>
+                <p className="font-mix-preview" data-testid="font-mix-preview">
+                  {previewRuns(MIXED_FONT_SAMPLE, style).map((run, i) => (
+                    <span key={i} style={{ fontFamily: run.family }}>
+                      {run.text}
+                    </span>
+                  ))}
+                </p>
+                <small className="muted" data-testid="font-mix-note">
+                  {effectiveFonts(style).mixed
+                    ? `中文 ${effectiveFonts(style).cjk} · 西文 ${effectiveFonts(style).latin}｜${latinExportNote(effectiveFonts(style).latin)}`
+                    : '未设置独立中西文字体，沿用上方字体'}
+                </small>
+              </div>
               <div className="form-grid">
                 <Field label="字号">
                   <input
