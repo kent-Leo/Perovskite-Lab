@@ -15,10 +15,10 @@ import {
   WORKSHEET_LIMITS,
   cellName,
   columnLetter,
-  cellInSelection,
   selectionName,
   selectionBounds,
   selectionStats,
+  pasteOrigin,
   columnSelection,
   rowSelection,
   copyWorksheetRange,
@@ -149,6 +149,7 @@ export function Worksheet({
   const root = useRef<HTMLDivElement>(null),
     dragging = useRef(false),
     dragPointer = useRef<number | null>(null),
+    autoScroll = useRef<{ raf: number; x: number; y: number; dx: number; dy: number } | null>(null),
     rowDragging = useRef<number | null>(null),
     headerDrag = useRef<{ kind: 'column' | 'row'; start: number } | null>(null),
     headerDragMoved = useRef(false),
@@ -199,41 +200,117 @@ export function Worksheet({
     //
     // 指针拖到表格外时不能就此停住：把命中点夹到最近的边缘，选区继续朝
     // 鼠标方向延伸到首行/末行、首列/末列，和 Excel 的手感一致。
+    // elementsFromPoint 让粘性表头 / 行号列下面被遮住的单元格也能命中。
     const cellAt = (x: number, y: number) => {
-      const hit = document.elementFromPoint(x, y);
-      if (!(hit instanceof Element) || !root.current?.contains(hit)) return null;
-      return cellFromAttr(hit.closest('[data-cell]')?.getAttribute('data-cell'));
+      for (const hit of document.elementsFromPoint(x, y)) {
+        if (!root.current?.contains(hit)) continue;
+        const at = cellFromAttr(hit.closest('[data-cell]')?.getAttribute('data-cell'));
+        if (at) return at;
+      }
+      return null;
     };
-    const extend = (e: PointerEvent) => {
-      if (!dragging.current || e.buttons !== 1) return;
-      if (dragPointer.current !== null && e.pointerId !== dragPointer.current) return;
-      const surface = root.current?.querySelector('.worksheet-scroll') ?? root.current;
+    const surfaceOf = () =>
+      root.current?.querySelector<HTMLElement>('.worksheet-scroll') ?? null;
+    const extendTo = (clientX: number, clientY: number) => {
+      const surface = surfaceOf();
       if (!surface) return;
       const rect = surface.getBoundingClientRect();
       if (!rect.width || !rect.height) return;
-      // 18px 内缩用于避开滚动条本体。
-      const x = Math.min(Math.max(e.clientX, rect.left + 2), rect.right - 18);
-      const y = Math.min(Math.max(e.clientY, rect.top + 2), rect.bottom - 18);
-      const at =
-        cellAt(x, y) ??
-        cellAt(e.clientX, y) ??
-        cellAt(x, e.clientY);
+      // 18px 内缩用于避开滚动条本体；再按窗口裁一次，容器超出窗口时仍能命中。
+      const x = Math.min(
+        Math.max(clientX, rect.left + 2, 0),
+        rect.right - 18,
+        window.innerWidth - 1,
+      );
+      const y = Math.min(
+        Math.max(clientY, rect.top + 2, 0),
+        rect.bottom - 18,
+        window.innerHeight - 1,
+      );
+      const at = cellAt(x, y) ?? cellAt(clientX, y) ?? cellAt(x, clientY);
       if (!at) return;
       setSelection((s) =>
         s.focus.row === at.row && s.focus.column === at.column ? s : { ...s, focus: at },
       );
     };
+    // Excel 式边缘自动滚动：进入 26px 内按距离给速度，越出视口越多滚得越快。
+    const EDGE = 26,
+      MAX_STEP = 26;
+    const velocity = (clientX: number, clientY: number) => {
+      const surface = surfaceOf();
+      if (!surface) return { dx: 0, dy: 0 };
+      const rect = surface.getBoundingClientRect(),
+        // 容器可能比窗口高：边缘按可见区域收拢，否则底部永远进不了触发区。
+        left = Math.max(rect.left + 2, 0),
+        top = Math.max(rect.top + 2, 0),
+        right = Math.min(rect.right - 18, window.innerWidth - 1),
+        bottom = Math.min(rect.bottom - 18, window.innerHeight - 1),
+        step = (distance: number) => MAX_STEP * Math.min(1, distance / EDGE);
+      const nearLeft = left + EDGE - clientX,
+        nearRight = clientX - (right - EDGE),
+        nearTop = top + EDGE - clientY,
+        nearBottom = clientY - (bottom - EDGE);
+      return {
+        dx: nearRight > 0 ? step(nearRight) : nearLeft > 0 ? -step(nearLeft) : 0,
+        dy: nearBottom > 0 ? step(nearBottom) : nearTop > 0 ? -step(nearTop) : 0,
+      };
+    };
+    function stopAutoScroll() {
+      if (!autoScroll.current) return;
+      cancelAnimationFrame(autoScroll.current.raf);
+      autoScroll.current = null;
+    }
+    function tick() {
+      const state = autoScroll.current,
+        surface = surfaceOf();
+      if (!state || !dragging.current || !surface) {
+        stopAutoScroll();
+        return;
+      }
+      const left = surface.scrollLeft,
+        top = surface.scrollTop;
+      if (state.dx) surface.scrollLeft = left + state.dx;
+      if (state.dy) surface.scrollTop = top + state.dy;
+      extendTo(state.x, state.y);
+      // 到达边界后不再空转；下一次 pointermove 会重新启动滚动循环。
+      if (surface.scrollLeft === left && surface.scrollTop === top) {
+        autoScroll.current = null;
+        return;
+      }
+      state.raf = requestAnimationFrame(tick);
+    }
+    const extend = (e: PointerEvent) => {
+      if (!dragging.current || e.buttons !== 1) return;
+      if (dragPointer.current !== null && e.pointerId !== dragPointer.current) return;
+      extendTo(e.clientX, e.clientY);
+      const { dx, dy } = velocity(e.clientX, e.clientY);
+      if (!dx && !dy) {
+        stopAutoScroll();
+        return;
+      }
+      if (autoScroll.current)
+        Object.assign(autoScroll.current, { x: e.clientX, y: e.clientY, dx, dy });
+      else {
+        autoScroll.current = { raf: 0, x: e.clientX, y: e.clientY, dx, dy };
+        autoScroll.current.raf = requestAnimationFrame(tick);
+      }
+    };
     const stop = () => {
       dragging.current = false;
       dragPointer.current = null;
+      stopAutoScroll();
     };
     window.addEventListener('pointermove', extend);
     window.addEventListener('pointerup', stop);
     window.addEventListener('pointercancel', stop);
+    // 指针在窗口外松开时收不到 pointerup，失焦也必须停止自动滚动。
+    window.addEventListener('blur', stop);
     return () => {
       window.removeEventListener('pointermove', extend);
       window.removeEventListener('pointerup', stop);
       window.removeEventListener('pointercancel', stop);
+      window.removeEventListener('blur', stop);
+      stopAutoScroll();
     };
   }, []);
   useEffect(() => {
@@ -425,16 +502,19 @@ export function Worksheet({
         : `已粘贴 ${applied.length} 列${label}`,
     );
   }
-  function paste(text: string, at = selection.focus) {    try {
+  /** Excel 式粘贴起点：矩形选区左上角，因此反向框选与正向框选结果一致。 */
+  function paste(text: string, at?: CellAddress) {
+    const origin: CellAddress = at ?? pasteOrigin(selection);
+    try {
       if (onPaste) {
-        onPaste(text, at);
+        onPaste(text, origin);
         setMessage('');
         return;
       }
       if (!onChange) throw new Error('此工作表为只读结果');
       const result = preparePaste
-        ? preparePaste(text, at)
-        : pasteWorksheetRange(data, columns, at, text);
+        ? preparePaste(text, origin)
+        : pasteWorksheetRange(data, columns, origin, text);
       commit(result.rows, 'paste', result.selection);
       setSelection(result.selection);
       setEditing(false);
@@ -891,16 +971,25 @@ export function Worksheet({
                     const invalid =
                       invalidCell?.(r, c) ||
                       (col.type === 'number' && !!value.trim() && numeric(value) === null);
+                    // 选区按预先算好的 bounds 比较，拖拽时不重新计算矩形。
+                    const selected =
+                      r >= bounds.top && r <= bounds.bottom && c >= bounds.left && c <= bounds.right;
+                    // Excel 式连续外框：矩形四条边各画 2px 蓝线，内部只保留浅蓝底色。
+                    const edges =
+                      (selected && r === bounds.top ? ' is-range-top' : '') +
+                      (selected && r === bounds.bottom ? ' is-range-bottom' : '') +
+                      (selected && c === bounds.left ? ' is-range-left' : '') +
+                      (selected && c === bounds.right ? ' is-range-right' : '');
                     return (
                       <td
                         key={col.key}
                         role="gridcell"
                         tabIndex={readOnly ? 0 : -1}
-                        aria-selected={cellInSelection(at, selection)}
+                        aria-selected={selected}
                         aria-readonly={readOnly || undefined}
                         aria-invalid={invalid || undefined}
                         data-cell={`${r}:${c}`}
-                        className={`${cellInSelection(at, selection) ? 'is-selected' : ''} ${focus.row === r && focus.column === c ? (editing ? 'is-active is-editing' : 'is-active') : ''} ${readOnly ? 'is-readonly' : ''}`}
+                        className={`${selected ? 'is-selected' : ''}${edges} ${focus.row === r && focus.column === c ? (editing ? 'is-active is-editing' : 'is-active') : ''} ${readOnly ? 'is-readonly' : ''}`}
                         onPointerDown={(e) => {
                           if (e.button !== 0) return;
                           if (!nativeControl) {
@@ -926,8 +1015,11 @@ export function Worksheet({
                           setEditing(false);
                         }}
                         onPointerEnter={(e) => {
-                          if (dragging.current && e.buttons === 1)
-                            setSelection((s) => ({ ...s, focus: at }));
+                          // 只在坐标真的变化时更新状态，避免同一格重复渲染。
+                          if (!dragging.current || e.buttons !== 1) return;
+                          setSelection((s) =>
+                            s.focus.row === r && s.focus.column === c ? s : { ...s, focus: at },
+                          );
                         }}
                         onFocus={() => {
                           if (!navigating.current && !dragging.current)
@@ -946,7 +1038,10 @@ export function Worksheet({
                         }}
                         onPaste={(e) => {
                           e.preventDefault();
-                          paste(e.clipboardData.getData('text/plain'), at);
+                          // 真实粘贴事件只会在活动单元格上触发，此时起点取选区左上角，
+                          // 反向框选与正向框选结果一致；事件来自其它单元格时以该单元格为准。
+                          const active = focus.row === r && focus.column === c;
+                          paste(e.clipboardData.getData('text/plain'), active ? undefined : at);
                         }}
                       >
                         {custom !== undefined ? (

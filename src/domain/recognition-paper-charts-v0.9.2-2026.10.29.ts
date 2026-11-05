@@ -1,4 +1,4 @@
-import { chartFontFamily } from './chart-fonts-2026.11.3';
+import { chartFontStack, svgFontRuns, type ChartTypography } from './chart-fonts-2026.11.3';
 import { chartSVG, escapeXML as esc, axisTickValues } from './chart';
 import { fmt } from './math';
 import { ionColor, type RecognitionAnalysis, type RecognitionData } from './recognition-2026.10.27';
@@ -33,9 +33,12 @@ export function chemicalRuns(value: string): Run[] {
   if (charge) append(charge.replace('-', '−'), 'super');
   return runs;
 }
-export function chemicalText(value: string): string {
-  return chemicalRuns(value).map(({ text, level }) => level === 'normal' ? esc(text)
-    : `<tspan baseline-shift="${level}" font-size="72%">${esc(text)}</tspan>`).join('');
+export function chemicalText(value: string, style?: ChartTypography): string {
+  return chemicalRuns(value).map(({ text, level }) => {
+    const body = style ? svgFontRuns(text, style) : esc(text);
+    return level === 'normal' ? body
+      : `<tspan baseline-shift="${level}" font-size="72%">${body}</tspan>`;
+  }).join('');
 }
 const textWidth = (text: string, fs: number) => [...text].reduce((sum, c) => sum + fs *
   (c.codePointAt(0)! > 0x2e80 ? 1.08 : /[MW@]/.test(c) ? 1 : /[A-Z]/.test(c) ? 0.78 : 0.66), 0);
@@ -137,7 +140,7 @@ export function scoresSVG(d: RecognitionData, a: RecognitionAnalysis, baseStyle:
             if (distance > radius + fs * 0.8)
               leader = `<line data-label-leader="true" x1="${point.x + (ex - point.x) * t}" y1="${point.y + (ey - point.y) * t}" x2="${ex}" y2="${ey}" stroke="${esc(series.color)}" stroke-width="0.7"/>`;
           }
-          return `${leader}<text data-ion-label="${esc(group.name)}" aria-label="${esc(group.name)}" x="${cx}" y="${box.y + fs * 1.55}" text-anchor="middle" fill="${esc(series.color)}" font-size="${fs}">${chemicalText(group.name)}</text>`;
+          return `${leader}<text data-ion-label="${esc(group.name)}" aria-label="${esc(group.name)}" x="${cx}" y="${box.y + fs * 1.55}" text-anchor="middle" fill="${esc(series.color)}" font-size="${fs}">${chemicalText(group.name, style)}</text>`;
         }).join('');
       },
     });
@@ -166,9 +169,9 @@ export function horizontalHierarchySVG(d: RecognitionData, a: RecognitionAnalysi
   const H = Math.max(600, top + bottom + n * Math.max(28, fs * 2.4));
   const pw = W - left - Math.max(35, fs * 3), ph = H - top - bottom, step = ph / n, axisY = top + ph;
   const sx = (height: number) => left + height / scale * pw;
-  const out = [`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(style.title || '层次聚类树状图')}" font-family="${esc(chartFontFamily(style.fontFamily))}"><defs></defs><rect width="${W}" height="${H}" fill="#ffffff"/>`];
+  const out = [`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(style.title || '层次聚类树状图')}" font-family="${esc(chartFontStack(style))}"><defs></defs><rect width="${W}" height="${H}" fill="#ffffff"/>`];
   const text = (x: number, y: number, value: string, anchor = 'start', size = fs, extra = '') =>
-    out.push(`<text x="${x}" y="${y}" fill="${ink}" font-size="${size}" text-anchor="${anchor}" ${extra}>${esc(value)}</text>`);
+    out.push(`<text x="${x}" y="${y}" fill="${ink}" font-size="${size}" text-anchor="${anchor}" ${extra}>${svgFontRuns(value, style)}</text>`);
   const line = (x: number, y: number, x2: number, y2: number, extra = '', width = style.lineWidth) =>
     out.push(`<line x1="${x}" y1="${y}" x2="${x2}" y2="${y2}" stroke="${ink}" stroke-width="${width}" ${extra}/>`);
   if (style.title) text(W / 2, fs + 12, style.title, 'middle', fs + 5);
@@ -176,7 +179,7 @@ export function horizontalHierarchySVG(d: RecognitionData, a: RecognitionAnalysi
   h.order.forEach((row, i) => {
     const y = top + (i + 0.5) * step, sample = d.rows[row];
     position[row] = { x: left, y };
-    out.push(`<g data-leaf="${row}" data-row-id="${esc(sample.id)}" data-cluster="${a.clusters![row]}"><title>${esc(`样本 ID: ${sample.sample}\n离子: ${sample.ion}\n平行编号: ${sample.replicate}\n簇: ${a.clusters![row]}`)}</title><rect x="${left - labelWidth - 14}" y="${y - step / 2}" width="${labelWidth + 14}" height="${step}" fill="transparent"/><text data-leaf-label="${row}" x="${left - 14}" y="${y + fs * 0.34}" font-size="${fs}" text-anchor="end" fill="${ink}" aria-label="${esc(sample.ion)}">${chemicalText(sample.ion)}</text></g>`);
+    out.push(`<g data-leaf="${row}" data-row-id="${esc(sample.id)}" data-cluster="${a.clusters![row]}"><title>${esc(`样本 ID: ${sample.sample}\n离子: ${sample.ion}\n平行编号: ${sample.replicate}\n簇: ${a.clusters![row]}`)}</title><rect x="${left - labelWidth - 14}" y="${y - step / 2}" width="${labelWidth + 14}" height="${step}" fill="transparent"/><text data-leaf-label="${row}" x="${left - 14}" y="${y + fs * 0.34}" font-size="${fs}" text-anchor="end" fill="${ink}" aria-label="${esc(sample.ion)}">${chemicalText(sample.ion, style)}</text></g>`);
   });
   h.merges.forEach((merge, i) => {
     const l = position[merge.left], r = position[merge.right], x = sx(merge.height);

@@ -1,6 +1,6 @@
 import type { ChartStyle } from '../domain/types';
 import type { PDFFont } from 'pdf-lib';
-import { exportFonts } from '../domain/chart-fonts-2026.11.3';
+import { pdfFonts, svgExportFonts } from '../domain/chart-fonts-2026.11.3';
 import { downloadBlob, filename } from './download';
 const svgFontData = new Map<string, Promise<string>>();
 const rasterFonts = new Map<string, Promise<void>>();
@@ -23,9 +23,9 @@ async function embeddedFontData({ family, file }: { family: string; file: string
   }
   return { family, font: await pending };
 }
-async function portableSVG(svg: string, fontFamily: string) {
-  const selected = exportFonts(fontFamily);
-  if (!fontFamily.startsWith('Perovskite Lab ') && !/[^\x00-\x7f]/.test(svg)) return { svg, fonts: [] };
+async function portableSVG(svg: string, style: ChartStyle) {
+  const selected = svgExportFonts(style, /[^\x00-\x7f]/.test(svg));
+  if (!selected.length) return { svg, fonts: [] };
   const fonts = await Promise.all(selected.map(embeddedFontData));
   return {
     svg: svg.replace(
@@ -107,7 +107,7 @@ export async function exportChart(
 ) {
   let embeddedFonts: { family: string; font: string }[] = [];
   if (format !== 'pdf') {
-    const portable = await portableSVG(svg, style.fontFamily);
+    const portable = await portableSVG(svg, style);
     svg = portable.svg;
     embeddedFonts = portable.fonts;
   }
@@ -151,7 +151,7 @@ export async function exportChart(
     return;
   }
   const [pdf, fontkit] = await Promise.all([import('pdf-lib'), import('@pdf-lib/fontkit')]);
-  const fontBytes = await Promise.all(exportFonts(style.fontFamily).map(async ({ file }) => {
+  const fontBytes = await Promise.all(pdfFonts(style).map(async ({ file }) => {
     const response = await fetch(`${import.meta.env.BASE_URL}fonts/${file}.ttf`);
     if (!response.ok) throw new Error('PDF 字体读取失败，请通过本地服务器打开网页');
     return response.arrayBuffer();
@@ -250,25 +250,57 @@ export async function exportChart(
         color: color(el.getAttribute('fill')),
       });
     if (tag === 'text') {
-      const content = el.textContent ?? '',
-        size = num(el, 'font-size', 16) * scale,
+      const size = num(el, 'font-size', 16) * scale,
         anchor = el.getAttribute('text-anchor'),
-        runs = textRuns(content),
-        width = runs.reduce((sum, run) => sum + run.font.widthOfTextAtSize(run.text, size), 0),
-        offset = anchor === 'middle' ? width / 2 : anchor === 'end' ? width : 0;
+        // 逐个文本节点取字号与基线偏移：化学式上下标（baseline-shift）在 PDF 里
+        // 也要真正抬高 / 降低，而不是当成普通文本画在同一条基线上。
+        pieces: { text: string; size: number; shift: number }[] = [];
+      const collect = (node: Node, base: number, shift: number) => {
+        for (const child of Array.from(node.childNodes)) {
+          if (child.nodeType === 3) {
+            const value = child.nodeValue ?? '';
+            if (value) pieces.push({ text: value, size: base, shift });
+            continue;
+          }
+          if (child.nodeType !== 1) continue;
+          const element = child as Element,
+            relative = element.getAttribute('font-size'),
+            childSize = relative?.endsWith('%')
+              ? (base * Number(relative.slice(0, -1))) / 100
+              : relative
+                ? Number(relative) * scale
+                : base,
+            baseline = element.getAttribute('baseline-shift');
+          collect(
+            element,
+            childSize,
+            baseline === 'super' ? shift + base * 0.32 : baseline === 'sub' ? shift - base * 0.16 : shift,
+          );
+        }
+      };
+      collect(el, size, 0);
+      const runs = pieces.flatMap((piece) =>
+        textRuns(piece.text).map((run) => ({ ...run, size: piece.size, shift: piece.shift })),
+      );
+      const width = runs.reduce(
+        (sum, run) => sum + run.font.widthOfTextAtSize(run.text, run.size),
+        0,
+      );
+      const offset = anchor === 'middle' ? width / 2 : anchor === 'end' ? width : 0;
       const angle = Number(el.getAttribute('transform')?.match(/rotate\(([-\d.]+)/)?.[1] ?? 0),
         r = (-angle * Math.PI) / 180;
       let advance = -offset;
       for (const run of runs) {
         page.drawText(run.text, {
           font: run.font,
-          size,
-          x: num(el, 'x') * scale + advance * Math.cos(r),
-          y: (H - num(el, 'y')) * scale + advance * Math.sin(r),
+          size: run.size,
+          // 基线偏移沿文字自身的“上”方向：旋转后仍然垂直于排版基线。
+          x: num(el, 'x') * scale + advance * Math.cos(r) + run.shift * Math.sin(r),
+          y: (H - num(el, 'y')) * scale + advance * Math.sin(r) + run.shift * Math.cos(r),
           color: color(el.getAttribute('fill')),
           rotate: pdf.degrees(-angle),
         });
-        advance += run.font.widthOfTextAtSize(run.text, size);
+        advance += run.font.widthOfTextAtSize(run.text, run.size);
       }
     }
     for (const child of el.children) draw(child);

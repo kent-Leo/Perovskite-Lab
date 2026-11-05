@@ -224,11 +224,38 @@
 .worksheet td > select {
   -webkit-user-drag: none;
 }
+/* Excel 式选区：浅蓝半透明底色 + 矩形外围连续蓝框。
+   四边用内阴影按 CSS 变量拼出，拖动时边框随选区实时更新，
+   滚动后仍与单元格坐标对齐，也不需要额外的绝对定位覆盖层。 */
 .worksheet td.is-selected {
+  --range-color: #3a78c4;
   background: #e9f2ff;
 }
+.worksheet td.is-range-top {
+  --range-top: 2px;
+}
+.worksheet td.is-range-bottom {
+  --range-bottom: 2px;
+}
+.worksheet td.is-range-left {
+  --range-left: 2px;
+}
+.worksheet td.is-range-right {
+  --range-right: 2px;
+}
+.worksheet td.is-selected,
 .worksheet td.is-active {
-  box-shadow: inset 0 0 0 2px #3a78c4;
+  box-shadow:
+    inset 0 var(--range-top, 0) 0 0 var(--range-color, transparent),
+    inset 0 calc(-1 * var(--range-bottom, 0px)) 0 0 var(--range-color, transparent),
+    inset var(--range-left, 0) 0 0 0 var(--range-color, transparent),
+    inset calc(-1 * var(--range-right, 0px)) 0 0 0 var(--range-color, transparent),
+    inset 0 0 0 var(--active-ring, 0) var(--active-color, transparent);
+}
+/* 活动单元格保留独立高亮边框，与选区外框叠加显示。 */
+.worksheet td.is-active {
+  --active-ring: 2px;
+  --active-color: #3a78c4;
   position: relative;
   z-index: 1;
 }
@@ -490,6 +517,6 @@
 /* Navigation vs edit mode feedback for the active cell. */
 .worksheet td.is-active.is-editing {
   background: #fff;
-  box-shadow: inset 0 0 0 2px #1f5fa8;
+  --active-color: #1f5fa8;
 }
 

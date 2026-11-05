@@ -1,4 +1,4 @@
-import { chartFontFamily } from './chart-fonts-2026.11.3';
+import { chartFontStack, svgFontRuns } from './chart-fonts-2026.11.3';
 import { escapeXML as esc } from './chart';
 import { clusterColor, type RecognitionAnalysis, type RecognitionData } from './recognition-2026.10.27';
 import type { ChartStyle } from './types';
@@ -37,9 +37,9 @@ export function hierarchySVG(d: RecognitionData, a: RecognitionAnalysis, style: 
     : 530 + sampleWidth * 0.8 + legendHeight;
   const pw = W - left - 60 - legendWidth;
   const ph = heatmap ? n * leafStep : 360;
-  const out = [`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(style.title)}" font-family="${esc(chartFontFamily(style.fontFamily))}"><defs></defs><rect width="${W}" height="${H}" fill="#ffffff"/>`];
+  const out = [`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(style.title)}" font-family="${esc(chartFontStack(style))}"><defs></defs><rect width="${W}" height="${H}" fill="#ffffff"/>`];
   const text = (x: number, y: number, value: string, anchor = 'start', size = fs, extra = '') =>
-    out.push(`<text x="${x}" y="${y}" fill="#243b39" font-size="${size}" text-anchor="${anchor}" ${extra}>${esc(value)}</text>`);
+    out.push(`<text x="${x}" y="${y}" fill="#243b39" font-size="${size}" text-anchor="${anchor}" ${extra}>${svgFontRuns(value, style)}</text>`);
   const line = (x: number, y: number, x2: number, y2: number, color = '#526764', dashed = false) =>
     out.push(`<line x1="${x}" y1="${y}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${style.lineWidth}"${dashed ? ' stroke-dasharray="6 4"' : ''}/>`);
   text(W / 2, fs + 18, style.title, 'middle', fs + 5);

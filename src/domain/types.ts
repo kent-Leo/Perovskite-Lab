@@ -106,6 +106,10 @@ export interface ChartStyle {
   pointSize: number;
   fontSize: number;
   fontFamily: string;
+  /** 中文字体；缺省时沿用 fontFamily，旧工作区保持原字体效果。 */
+  cjkFontFamily?: string;
+  /** 西文字体；与 cjkFontFamily 各自独立保存，互不覆盖。 */
+  latinFontFamily?: string;
   grid: boolean;
   points: boolean;
   // Show every data point's y value next to the mark (optional: older workspaces omit it).

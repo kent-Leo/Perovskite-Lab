@@ -127,7 +127,7 @@ export function Recognition() {
     })) };
   };
   const setStyle = (target: RecognitionChart, patch: Partial<ChartStyle>) => {
-    const shared = Object.fromEntries(Object.entries(patch).filter(([key]) => ['fontFamily', 'fontSize', 'lineWidth'].includes(key)));
+    const shared = Object.fromEntries(Object.entries(patch).filter(([key]) => ['fontFamily', 'cjkFontFamily', 'latinFontFamily', 'fontSize', 'lineWidth'].includes(key)));
     const peer = target === 'scores' ? 'tree' : target === 'tree' ? 'scores' : undefined;
     settings({ styles: { ...s.styles, ...(peer ? { [peer]: { ...s.styles[peer], ...shared } } : {}),
       [target]: { ...s.styles[target], ...patch } } });

@@ -1,4 +1,5 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
+import { versionTag } from './version-tag-2026.11.5';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -168,7 +169,9 @@ test('SVG geometry equals the preview and PNG pixels equal the exported SVG rast
       const event = page.waitForEvent('download');
       await panel.getByRole('button', { name: format, exact: true }).click();
       const download = await event, file = path.join(evidence, download.suggestedFilename());
-      expect(download.suggestedFilename()).toMatch(/v0\.9\.5-\d{4}\.\d{1,2}\.\d{1,2}\./);
+      expect(download.suggestedFilename()).toMatch(
+        new RegExp(`${versionTag}-\\d{4}\\.\\d{1,2}\\.\\d{1,2}\\\.`),
+      );
       await download.saveAs(file); downloads[format] = readFileSync(file);
     }
     const result = await page.evaluate(async ({ preview, exported, png }) => {

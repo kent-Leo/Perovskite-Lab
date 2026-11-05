@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { versionTag } from './version-tag-2026.11.5';
 import { readFile } from 'node:fs/promises';
 import { PDFDocument } from 'pdf-lib';
 import * as XLSX from 'xlsx';
@@ -154,7 +155,7 @@ test('two-column object CSV maps automatically and provides a downloadable forma
   const download = page.waitForEvent('download');
   await dialog.getByRole('button', { name: '下载当前布局 CSV 模板' }).click();
   expect((await download).suggestedFilename()).toMatch(
-    /对象筛选模板-v0\.9\.5-\d{4}\.\d{1,2}\.\d{1,2}\.csv/,
+    new RegExp(`对象筛选模板-${versionTag}-\\d{4}\\.\\d{1,2}\\.\\d{1,2}\\.csv`),
   );
   await dialog.getByRole('button', { name: '确认导入', exact: true }).click();
   await expect(page.getByLabel('对象名称 2', { exact: true })).toHaveValue('Cd2+');

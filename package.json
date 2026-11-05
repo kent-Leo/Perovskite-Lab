@@ -1,6 +1,6 @@
 {
   "name": "perovskite-lab",
-  "version": "0.9.5",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "Perovskite Lab 荧光光谱与检测数据分析工作台",

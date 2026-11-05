@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
+import { versionTag } from './version-tag-2026.11.5';
 import { readFile, mkdir } from 'node:fs/promises';
 import * as XLSX from 'xlsx';
 import { AI_STORAGE_KEY } from '../../src/state/ai-session-2026.10.24';
@@ -58,7 +59,9 @@ test('TXT → unconfirmed AI suggestions → preview → apply → auditable Exc
   const downloaded = page.waitForEvent('download');
   await p.getByRole('button', { name: '导出处理 Excel', exact: true }).click();
   const file = await downloaded;
-  expect(file.suggestedFilename()).toMatch(/^光谱干扰处理-v0\.9\.5-\d{4}\.\d{1,2}\.\d{1,2}\.xlsx$/);
+  expect(file.suggestedFilename()).toMatch(
+    new RegExp(`^光谱干扰处理-${versionTag}-\\d{4}\\.\\d{1,2}\\.\\d{1,2}\\.xlsx$`),
+  );
   const output = info.outputPath('处理结果-2026.10.24.xlsx');
   await file.saveAs(output);
   const wb = XLSX.read(await readFile(output));

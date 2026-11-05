@@ -13,6 +13,13 @@
   src: url('/fonts/PerovskiteLabSerif-Regular-2026.11.3.woff') format('woff');
   font-display: swap;
 }
+/* Times New Roman 的度量兼容替代（Tinos，SIL OFL 1.1）。系统装有
+   Times New Roman 时仍然优先使用系统字体，这里只负责缺字设备的一致性。 */
+@font-face {
+  font-family: 'Tinos';
+  src: url('/fonts/Tinos-Regular-2026.11.5.woff') format('woff');
+  font-display: swap;
+}
 :root {
   font-family: 'Perovskite Lab Serif', 'Perovskite Lab Song', serif;
   color: #263c37;
@@ -787,6 +794,37 @@ input[type='checkbox'] {
 .style-panel > .field,
 .style-panel > .form-grid {
   margin-bottom: 15px;
+}
+/* 中西文独立字体：预设按钮 + 实时混排预览。 */
+.font-mix {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 15px;
+}
+.font-mix > button {
+  align-self: flex-start;
+}
+.font-mix > button[aria-pressed='true'] {
+  border-color: #177962;
+  background: #e8f3ef;
+  color: #145c4b;
+}
+.font-mix-preview {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px dashed #cfdad4;
+  border-radius: 5px;
+  background: #fff;
+  color: #263c37;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.font-mix > small {
+  font-size: 0.7rem;
+  line-height: 1.7;
+  color: #96a096;
 }
 .form-grid {
   display: grid;

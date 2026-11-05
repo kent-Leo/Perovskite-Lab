@@ -55,6 +55,11 @@ export function cellInSelection(cell: CellAddress, s: CellSelection) {
     cell.row >= b.top && cell.row <= b.bottom && cell.column >= b.left && cell.column <= b.right
   );
 }
+/** Excel 式粘贴起点：矩形选区的左上角，因此反向框选与正向框选粘贴结果一致。 */
+export function pasteOrigin(s: CellSelection): CellAddress {
+  const b = selectionBounds(s);
+  return { row: b.top, column: b.left };
+}
 /** Excel 式整列选区；anchorColumn 用于 Shift / 拖拽连选时保留锚点列。 */
 export function columnSelection(
   column: number,
@@ -185,6 +190,10 @@ export function pasteWorksheetRange(
     height = Math.max(rows.length, at.row + values.length);
   if (at.column + width > columns.length)
     throw new Error('粘贴区域超出工作表列数，请先添加列或调整起点');
+  if (at.row + values.length > WORKSHEET_LIMITS.rows)
+    throw new Error(
+      `工作表数据过大：粘贴区域超出 ${WORKSHEET_LIMITS.rows} 行上限，请调整起点或分批粘贴`,
+    );
   if (
     height > WORKSHEET_LIMITS.rows ||
     columns.length > WORKSHEET_LIMITS.columns ||
