@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, Upload, FlaskConical } from 'lucide-react';
 import { useWorkspace } from '../state/workspace';
+import { useSheetHistory } from '../state/useSheetHistory-2026.11.5';
 import { useWorkbook } from '../state/useWorkbook';
 import {
   responses,
   uid,
+  type CalibrationRow,
   type ChartStyle,
   type PlotData,
   type Point,
@@ -31,6 +33,12 @@ import { ChartPanel } from '../components/ChartPanel';
 import { ErrorNote, Field, Metric, SectionHead } from '../components/ui';
 import { WorkspaceWorksheet as Worksheet } from '../components/WorkspaceWorksheet-v0.3.1-2026.10.19';
 import type { WorksheetColumn } from '../domain/worksheet-v0.2.0-2026.10.19';
+import {
+  structureAxis,
+  structureCount,
+  structureStart,
+  type WorksheetStructureAction,
+} from '../domain/worksheet-structure-2026.11.5';
 import { sheetChartTitle, type CalibrationSheetPayload } from '../domain/workbook';
 import { exportExcel } from '../services/download';
 
@@ -132,6 +140,22 @@ function calibrationChart(
 export function Calibration({ onImport }: { onImport: () => void }) {
   const { w, update, notify } = useWorkspace();
   const wb = useWorkbook('calibration');
+  // 整表撤销 / 重做：单元格编辑与行列结构操作共用一条历史。
+  const history = useSheetHistory<{ calibration: CalibrationRow[] }>(
+    wb.activeId,
+    () => ({ calibration: w.calibration.map((row) => ({ ...row })) }),
+    (snapshot) => update({ calibration: snapshot.calibration }),
+  );
+  const commit = (patch: Partial<typeof w>) => {
+    history.record();
+    update(patch);
+  };
+  const externalHistory = {
+    canUndo: history.canUndo,
+    canRedo: history.canRedo,
+    undo: history.undo,
+    redo: history.redo,
+  };
   const [showResiduals, setShowResiduals] = useState(false);
   const [viewMode, setViewMode] = useState<PlotViewMode>('active');
   const result = useMemo(
@@ -207,13 +231,33 @@ export function Calibration({ onImport }: { onImport: () => void }) {
       notify((e as Error).message);
     }
   }
-  /** Insert a blank calibration point at any position. */
-  function insertPoint(index: number) {
-    const rows = [...w.calibration];
-    const at = Math.max(0, Math.min(index, rows.length));
-    rows.splice(at, 0, { id: uid(), concentration: '', intensity: '', included: true });
-    update({ calibration: rows });
+  /** 行结构操作：插入 / 追加 / 删除校准点。 */
+  function structure(action: WorksheetStructureAction) {
+    if (structureAxis(action) === 'column') return;
+    const rows = w.calibration;
+    if (action.type === 'delete-row') {
+      const start = structureStart(action);
+      const count = structureCount(action.count);
+      commit({ calibration: rows.filter((_, index) => index < start || index >= start + count) });
+      return;
+    }
+    const at =
+      action.type === 'append-row'
+        ? rows.length
+        : Math.max(0, Math.min(structureStart(action), rows.length));
+    const count = structureCount(action.count);
+    const added = Array.from({ length: count }, () => ({
+      id: uid(),
+      concentration: '',
+      intensity: '',
+      included: true,
+    }));
+    commit({ calibration: [...rows.slice(0, at), ...added, ...rows.slice(at)] });
   }
+  const canStructure = (action: WorksheetStructureAction) =>
+    structureAxis(action) === 'column'
+      ? '校准表的列固定（浓度、强度、参与拟合与只读响应），不能插入或删除；请使用行操作'
+      : null;
   const fit = result.fit,
     equation = fit ? result.equation : '—';
   return (
@@ -334,14 +378,7 @@ export function Calibration({ onImport }: { onImport: () => void }) {
                 </button>
                 <button
                   className="small-button"
-                  onClick={() =>
-                    update({
-                      calibration: [
-                        ...w.calibration,
-                        { id: uid(), concentration: '', intensity: '', included: true },
-                      ],
-                    })
-                  }
+                  onClick={() => structure({ type: 'append-row', count: 1 })}
                 >
                   <Plus size={15} />
                   添加点
@@ -359,7 +396,9 @@ export function Calibration({ onImport }: { onImport: () => void }) {
             onSelectSheet={wb.select}
             onCreateSheet={wb.create}
             onDeleteSheet={wb.remove}
-            onInsertRow={insertPoint}
+            onStructure={structure}
+            canStructure={canStructure}
+            externalHistory={externalHistory}
             minRows={Math.max(1, w.calibration.length)}
             columns={
               [
@@ -399,7 +438,7 @@ export function Calibration({ onImport }: { onImport: () => void }) {
               return [r.concentration, r.intensity, String(r.included), fmt(value, 8), ''];
             })}
             onChange={(rows) =>
-              update({
+              commit({
                 calibration: rows.map((r, i) => ({
                   id: w.calibration[i]?.id ?? uid(),
                   concentration: r[0],
@@ -421,7 +460,7 @@ export function Calibration({ onImport }: { onImport: () => void }) {
                 <button
                   className="icon-button"
                   aria-label={`删除校准点 ${i + 1}`}
-                  onClick={() => update({ calibration: w.calibration.filter((_, j) => j !== i) })}
+                  onClick={() => structure({ type: 'delete-row', index: i, count: 1 })}
                 >
                   <Trash2 size={15} />
                 </button>

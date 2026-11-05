@@ -6,8 +6,10 @@ import {
   useState,
   type ClipboardEvent,
   type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { Table2, Copy, ClipboardPaste, Plus, Undo2, Redo2, Pencil, Trash2 } from 'lucide-react';
 import { fmt, numeric } from '../domain/math';
 import {
@@ -31,6 +33,15 @@ import {
   type CellSelection,
   type WorksheetColumn,
 } from '../domain/worksheet-v0.2.0-2026.10.19';
+import {
+  deleteConfirmMessage,
+  needsDeleteConfirm,
+  structureAxis,
+  structureCount,
+  structureStart,
+  type WorksheetStructureAction,
+} from '../domain/worksheet-structure-2026.11.5';
+import { isDesktopApp } from '../services/desktop-project-2026.11.4';
 import './Worksheet-v0.2.0-2026.10.19.css';
 
 export type WorksheetChange = {
@@ -57,10 +68,10 @@ export type WorksheetProps = {
   rowLimit?: number;
   onMoveRow?: (from: number, to: number) => void;
   onMetadataChange?: (column: number, field: 'title' | 'unit' | 'comment', value: string) => void;
-  onAddColumn?: () => void;
-  // Insert a row above / a column to the left of the active cell (0-based position).
-  onInsertRow?: (row: number) => void;
-  onInsertColumn?: (column: number) => void;
+  /** 插入 / 追加 / 删除行或列；由页面把结果写回自己的数据模型。 */
+  onStructure?: (action: WorksheetStructureAction) => void;
+  /** 返回禁用原因（显示在菜单里）；返回 null 表示允许该结构操作。 */
+  canStructure?: (action: WorksheetStructureAction) => string | null;
   cellLabel?: (row: number, column: number) => string;
   invalidCell?: (row: number, column: number) => boolean;
   renderCell?: (row: number, column: number) => ReactNode | undefined;
@@ -70,6 +81,15 @@ export type WorksheetProps = {
   /** Optional whole-document history, including probe / row structure changes. */
   externalHistory?: { canUndo: boolean; canRedo: boolean; undo: () => void; redo: () => void };
 };
+type ContextMenuState = {
+  x: number;
+  y: number;
+  /** 右键落在哪一类表头/单元格上，决定菜单里默认出现哪些操作。 */
+  kind: 'row' | 'column' | 'cell';
+  selection: CellSelection;
+  /** 菜单打开时用于摆放子菜单的方向。 */
+  flip: boolean;
+}
 const firstCell = { row: 0, column: 0 };
 
 /** Parse a `data-cell="row:column"` attribute into a cell address. */
@@ -96,9 +116,8 @@ export function Worksheet({
   rowLimit,
   onMoveRow,
   onMetadataChange,
-  onAddColumn,
-  onInsertRow,
-  onInsertColumn,
+  onStructure,
+  canStructure,
   cellLabel,
   invalidCell,
   renderCell,
@@ -159,6 +178,8 @@ export function Worksheet({
     anchor: firstCell,
     focus: firstCell,
   });
+  /** 选区是怎么来的：右键行号 / 列标时只有整行 / 整列选区才保留批量范围。 */
+  const selectionOrigin = useRef<'row' | 'column' | 'cell'>('cell');
   const [capacity, setCapacity] = useState(minRows),
     [editing, setEditing] = useState(false),
     [message, setMessage] = useState('');
@@ -229,6 +250,7 @@ export function Worksheet({
       );
       const at = cellAt(x, y) ?? cellAt(clientX, y) ?? cellAt(x, clientY);
       if (!at) return;
+      selectionOrigin.current = 'cell';
       setSelection((s) =>
         s.focus.row === at.row && s.focus.column === at.column ? s : { ...s, focus: at },
       );
@@ -327,6 +349,7 @@ export function Worksheet({
           from = Math.min(drag.start, column),
           to = Math.max(drag.start, column);
         if (to !== from) headerDragMoved.current = true;
+        selectionOrigin.current = 'column';
         setSelection({
           anchor: { row: 0, column: from },
           focus: { row: Math.max(0, height - 1), column: to },
@@ -340,6 +363,7 @@ export function Worksheet({
         from = Math.min(drag.start, row),
         to = Math.max(drag.start, row);
       if (to !== from) headerDragMoved.current = true;
+      selectionOrigin.current = 'row';
       setSelection({
         anchor: { row: from, column: 0 },
         focus: { row: to, column: Math.max(0, columns.length - 1) },
@@ -383,13 +407,16 @@ export function Worksheet({
       ),
     );
     if (!onChange || fingerprintOf(next) === fingerprint) return;
-    history.current.past.push(rows.map((row) => [...row]));
-    const limit = Math.max(
-      1,
-      Math.min(20, Math.floor(1000000 / Math.max(1, next.length * columns.length))),
-    );
-    history.current.past = history.current.past.slice(-limit);
-    history.current.future = [];
+    // 页面接管了整表历史时不再重复保存一份行快照。
+    if (!externalHistory) {
+      history.current.past.push(rows.map((row) => [...row]));
+      const limit = Math.max(
+        1,
+        Math.min(20, Math.floor(1000000 / Math.max(1, next.length * columns.length))),
+      );
+      history.current.past = history.current.past.slice(-limit);
+      history.current.future = [];
+    }
     const trimmed = trimWorksheetRows(next, columns);
     history.current.expected = fingerprintOf(trimmed);
     onChange(trimmed, { kind, selection: range });
@@ -428,6 +455,7 @@ export function Worksheet({
     }
   }
   function focusCell(at: CellAddress, extend = false) {
+    selectionOrigin.current = 'cell';
     const next = {
       row: Math.max(0, Math.min(height - 1, at.row)),
       column: Math.max(0, Math.min(columns.length - 1, at.column)),
@@ -438,11 +466,13 @@ export function Worksheet({
   }
   /** Excel 式整列选中；extend 时保留锚点所在列，从而 Shift 连选多列。 */
   function selectColumn(column: number, extend = false) {
+    selectionOrigin.current = 'column';
     setSelection((s) => columnSelection(column, height, extend ? s.anchor.column : column));
     setEditing(false);
   }
   /** Excel 式整行选中；extend 时保留锚点所在行。 */
   function selectRow(row: number, extend = false) {
+    selectionOrigin.current = 'row';
     setSelection((s) => rowSelection(row, columns.length, extend ? s.anchor.row : row));
     setEditing(false);
   }
@@ -452,20 +482,152 @@ export function Worksheet({
     input.setSelectionRange(end, end);
     setEditing(true);
   }
-  function insertAt(kind: 'row' | 'column') {
-    const at = selection.focus;
-    try {
-      if (kind === 'row') onInsertRow?.(at.row);
-      else onInsertColumn?.(at.column);
-    } catch (e) {
-      setMessage((e as Error).message);
+  const [menu, setMenu] = useState<ContextMenuState | null>(null);
+  const [submenu, setSubmenu] = useState<'row' | 'column' | null>(null);
+  const menuRoot = useRef<HTMLDivElement>(null);
+  const editable = !!onChange || !!onPaste;
+
+  /** 结构操作是否可用：页面给出的原因优先，其次要求工作表可编辑。 */
+  function structureReason(action: WorksheetStructureAction): string | null {
+    if (!onStructure) return '当前工作表不支持结构修改';
+    return canStructure?.(action) ?? null;
+  }
+  function runStructure(action: WorksheetStructureAction) {
+    if (!onStructure) return;
+    const reason = structureReason(action);
+    if (reason) {
+      setMessage(reason);
+      closeMenu();
       return;
     }
-    // The active cell keeps its coordinates: they now point at the new blank row/column.
-    setEditing(false);
-    setMessage('');
-    pendingFocus.current = { ...at };
+    if (needsDeleteConfirm(action, data) && !window.confirm(deleteConfirmMessage(action))) return;
+    try {
+      onStructure(action);
+      followStructure(action);
+      setMessage('');
+    } catch (e) {
+      setMessage((e as Error).message);
+    } finally {
+      setEditing(false);
+      closeMenu();
+    }
+  }
+  /** 插入后选中新行/列，删除后落到原位置的下一个，方便继续录入。 */
+  function followStructure(action: WorksheetStructureAction) {
+    const amount = structureCount(action.count);
+    const start = structureStart(action);
+    const isRow = structureAxis(action) === 'row';
+    const last = (isRow ? height : columns.length) - 1;
+    if (action.type.startsWith('delete')) {
+      const next = Math.max(0, Math.min(start, last - amount + 1));
+      setSelection(
+        isRow
+          ? rowSelection(next, columns.length)
+          : columnSelection(next, height),
+      );
+      pendingFocus.current = { row: isRow ? next : selection.focus.row, column: isRow ? selection.focus.column : next };
+    } else {
+      const from = action.type.startsWith('append') ? last + 1 : start;
+      const to = from + amount - 1;
+      setSelection(
+        isRow
+          ? { anchor: { row: from, column: 0 }, focus: { row: to, column: Math.max(0, columns.length - 1) } }
+          : { anchor: { row: 0, column: from }, focus: { row: Math.max(0, height - 1), column: to } },
+      );
+      pendingFocus.current = { row: isRow ? from : selection.focus.row, column: isRow ? selection.focus.column : from };
+    }
     setFocusRequest((n) => n + 1);
+  }
+  function closeMenu() {
+    setMenu(null);
+    setSubmenu(null);
+  }
+  useEffect(() => {
+    if (!menu) return;
+    const outside = (event: Event) => {
+      if (event.target instanceof Node && menuRoot.current?.contains(event.target)) return;
+      closeMenu();
+    };
+    const escape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') closeMenu();
+    };
+    window.addEventListener('pointerdown', outside, true);
+    window.addEventListener('keydown', escape);
+    window.addEventListener('resize', closeMenu);
+    window.addEventListener('blur', closeMenu);
+    return () => {
+      window.removeEventListener('pointerdown', outside, true);
+      window.removeEventListener('keydown', escape);
+      window.removeEventListener('resize', closeMenu);
+      window.removeEventListener('blur', closeMenu);
+    };
+  }, [menu]);
+  // 菜单渲染后按实际尺寸夹回视口，避免贴近屏幕边缘时被裁掉。
+  useLayoutEffect(() => {
+    const node = menuRoot.current;
+    if (!menu || !node) return;
+    const rect = node.getBoundingClientRect();
+    const x = Math.min(menu.x, Math.max(8, window.innerWidth - rect.width - 8));
+    const y = Math.min(menu.y, Math.max(8, window.innerHeight - rect.height - 8));
+    if (x !== menu.x || y !== menu.y)
+      setMenu((current) => (current ? { ...current, x, y } : current));
+  }, [menu]);
+  /**
+   * 右键：落在当前选区内保留选区，落在选区外则更新选中目标。
+   * 与 Excel 一致，右键行号 / 列标总是落到整行 / 整列；只有选区本身就是整行 / 整列时才保留批量选择。
+   */
+  function openMenu(event: ReactMouseEvent, kind: ContextMenuState['kind'], at: CellAddress) {
+    event.preventDefault();
+    event.stopPropagation();
+    const inside =
+      at.row >= bounds.top && at.row <= bounds.bottom && at.column >= bounds.left && at.column <= bounds.right;
+    const keep =
+      kind === 'row'
+        ? selectionOrigin.current === 'row' && inside
+        : kind === 'column'
+          ? selectionOrigin.current === 'column' && inside
+          : inside;
+    let next = selection;
+    if (!keep) {
+      next =
+        kind === 'row'
+          ? rowSelection(at.row, columns.length)
+          : kind === 'column'
+            ? columnSelection(at.column, height)
+            : { anchor: at, focus: at };
+      selectionOrigin.current = kind;
+      setSelection(next);
+      setEditing(false);
+    }
+    const x = Math.max(8, Math.min(event.clientX, window.innerWidth - 236));
+    const y = Math.max(8, Math.min(event.clientY, window.innerHeight - 300));
+    setMenu({ x, y, kind, selection: next, flip: event.clientX > window.innerWidth * 0.6 });
+    setSubmenu(null);
+  }
+  /** 菜单当前作用的行范围：选区覆盖多行时按整块处理。 */
+  function menuRows(state: ContextMenuState) {
+    const b = selectionBounds(state.selection);
+    return { start: b.top, count: b.bottom - b.top + 1 };
+  }
+  function menuColumns(state: ContextMenuState) {
+    const b = selectionBounds(state.selection);
+    return { start: b.left, count: b.right - b.left + 1 };
+  }
+  function menuCopy(state: ContextMenuState) {
+    const text = copyWorksheetRange(data, state.selection);
+    closeMenu();
+    void navigator.clipboard
+      .writeText(text)
+      .then(() => setMessage('已复制到剪贴板'))
+      .catch(() => setMessage('请使用 ⌘C / Ctrl+C 复制选区'));
+  }
+  function menuPaste(state: ContextMenuState) {
+    const origin = pasteOrigin(state.selection);
+    closeMenu();
+    void navigator.clipboard
+      .readText()
+      .then((text) => paste(text, origin))
+      .catch(() => setMessage('浏览器未允许读取剪贴板，请使用 ⌘V / Ctrl+V 粘贴'));
   }
   useLayoutEffect(() => {
     const at = pendingFocus.current;
@@ -555,11 +717,13 @@ export function Worksheet({
     }
     if (command && key === 'a' && !editing) {
       e.preventDefault();
+      selectionOrigin.current = 'cell';
       setSelection({ anchor: firstCell, focus: { row: height - 1, column: columns.length - 1 } });
       return;
     }
     if (e.key === 'Escape') {
       setEditing(false);
+      selectionOrigin.current = 'cell';
       setSelection({ anchor: selection.focus, focus: selection.focus });
       return;
     }
@@ -646,6 +810,20 @@ export function Worksheet({
   const bounds = selectionBounds(selection),
     wholeColumns = bounds.top === 0 && bounds.bottom === height - 1,
     wholeRows = bounds.left === 0 && bounds.right === columns.length - 1;
+  // 固定列页面（对象筛选 / 校准 / 梯度）不渲染列结构按钮；桌面端整体迁到右键菜单。
+  const insertRowReason = canStructure?.({ type: 'insert-row', index: bounds.top, count: 1 });
+  const appendRowReason = canStructure?.({ type: 'append-row', count: 1 });
+  const insertColumnReason = canStructure?.({ type: 'insert-column', index: bounds.left, count: 1 });
+  const appendColumnReason = canStructure?.({ type: 'append-column', count: 1 });
+  const rowTools = !!onStructure && (!insertRowReason || !appendRowReason);
+  const columnTools = !!onStructure && (!insertColumnReason || !appendColumnReason);
+  // 选区落在不允许插入的位置（例如多探针表的必需列）时，退回到末尾追加，保持旧入口可用。
+  const insertRowAction: WorksheetStructureAction = insertRowReason
+    ? { type: 'append-row', count: 1 }
+    : { type: 'insert-row', index: bounds.top, count: 1 };
+  const insertColumnAction: WorksheetStructureAction = insertColumnReason
+    ? { type: 'append-column', count: 1 }
+    : { type: 'insert-column', index: bounds.left, count: 1 };
   const focus = selection.focus,
     activeColumn = columns[focus.column],
     activeValue = data[focus.row]?.[focus.column] ?? '';
@@ -754,7 +932,8 @@ export function Worksheet({
               <ClipboardPaste size={14} />
               粘贴
             </button>
-            {allowAddRows && (
+            {/* 桌面端把插入 / 新增迁到右键菜单，浏览器保留工具栏入口。 */}
+            {!isDesktopApp && allowAddRows && (
               <button
                 type="button"
                 onClick={() => {
@@ -777,28 +956,28 @@ export function Worksheet({
             )}
           </>
         )}
-        {onAddColumn && (
-          <button type="button" onClick={onAddColumn}>
+        {!isDesktopApp && columnTools && (
+          <button type="button" onClick={() => runStructure({ type: 'append-column', count: 1 })}>
             <Plus size={14} />列
           </button>
         )}
-        {(onInsertRow || onInsertColumn) && <span className="worksheet-separator" />}
-        {onInsertRow && (
+        {!isDesktopApp && (columnTools || rowTools) && <span className="worksheet-separator" />}
+        {!isDesktopApp && rowTools && (
           <button
             type="button"
             aria-label="插入行"
             title="在选中行上方插入一行"
-            onClick={() => insertAt('row')}
+            onClick={() => runStructure(insertRowAction)}
           >
             <Plus size={14} />插入行
           </button>
         )}
-        {onInsertColumn && (
+        {!isDesktopApp && columnTools && (
           <button
             type="button"
             aria-label="插入列"
             title="在选中列左侧插入一列"
-            onClick={() => insertAt('column')}
+            onClick={() => runStructure(insertColumnAction)}
           >
             <Plus size={14} />插入列
           </button>
@@ -846,6 +1025,7 @@ export function Worksheet({
                   scope="col"
                   key={col.key}
                   data-col={c}
+                  onContextMenu={(e) => openMenu(e, 'column', { row: 0, column: c })}
                   className={
                     wholeColumns && c >= bounds.left && c <= bounds.right ? 'is-selected' : undefined
                   }
@@ -920,6 +1100,7 @@ export function Worksheet({
                   <th
                     scope="row"
                     data-row={r}
+                    onContextMenu={(e) => openMenu(e, 'row', { row: r, column: 0 })}
                     className={
                       wholeRows && r >= bounds.top && r <= bounds.bottom ? 'is-selected' : undefined
                     }
@@ -990,6 +1171,7 @@ export function Worksheet({
                         aria-invalid={invalid || undefined}
                         data-cell={`${r}:${c}`}
                         className={`${selected ? 'is-selected' : ''}${edges} ${focus.row === r && focus.column === c ? (editing ? 'is-active is-editing' : 'is-active') : ''} ${readOnly ? 'is-readonly' : ''}`}
+                        onContextMenu={(e) => openMenu(e, 'cell', at)}
                         onPointerDown={(e) => {
                           if (e.button !== 0) return;
                           if (!nativeControl) {
@@ -1003,8 +1185,10 @@ export function Worksheet({
                           }
                           if (e.shiftKey) {
                             e.preventDefault();
+                            selectionOrigin.current = 'cell';
                             setSelection((s) => ({ ...s, focus: at }));
                           } else {
+                            selectionOrigin.current = 'cell';
                             setSelection({ anchor: at, focus: at });
                             if (!nativeControl) pendingFocus.current = at;
                           }
@@ -1220,6 +1404,169 @@ export function Worksheet({
           {stats.numeric > 0 && ` · 均值 ${fmt(stats.mean, 5)} · 总和 ${fmt(stats.sum, 5)}`}
         </span>
       </div>
+      {menu &&
+        createPortal(
+          <div
+            ref={menuRoot}
+            className="worksheet-context"
+            role="menu"
+            aria-label="工作表行列操作"
+            style={{ left: menu.x, top: menu.y }}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            {(() => {
+              const rowsRange = menuRows(menu),
+                colsRange = menuColumns(menu),
+                rowItems: { label: string; action: WorksheetStructureAction }[] = [
+                  {
+                    label: `在上方插入 ${rowsRange.count} 行`,
+                    action: { type: 'insert-row', index: rowsRange.start, count: rowsRange.count },
+                  },
+                  {
+                    label: `在下方插入 ${rowsRange.count} 行`,
+                    action: {
+                      type: 'insert-row',
+                      index: rowsRange.start + rowsRange.count,
+                      count: rowsRange.count,
+                    },
+                  },
+                  { label: '在末尾新增 1 行', action: { type: 'append-row', count: 1 } },
+                ],
+                columnItems: { label: string; action: WorksheetStructureAction }[] = [
+                  {
+                    label: `在左侧插入 ${colsRange.count} 列`,
+                    action: { type: 'insert-column', index: colsRange.start, count: colsRange.count },
+                  },
+                  {
+                    label: `在右侧插入 ${colsRange.count} 列`,
+                    action: {
+                      type: 'insert-column',
+                      index: colsRange.start + colsRange.count,
+                      count: colsRange.count,
+                    },
+                  },
+                  { label: '在末尾新增 1 列', action: { type: 'append-column', count: 1 } },
+                ],
+                rowDelete: WorksheetStructureAction = {
+                  type: 'delete-row',
+                  index: rowsRange.start,
+                  count: rowsRange.count,
+                },
+                columnDelete: WorksheetStructureAction = {
+                  type: 'delete-column',
+                  index: colsRange.start,
+                  count: colsRange.count,
+                },
+                rowReason = structureReason(rowDelete),
+                columnReason = structureReason(columnDelete),
+                insertRowReason = rowItems
+                  .map((item) => structureReason(item.action))
+                  .find((reason) => reason !== null),
+                insertColumnReason = columnItems
+                  .map((item) => structureReason(item.action))
+                  .find((reason) => reason !== null);
+              const group = (
+                title: string,
+                key: 'row' | 'column',
+                items: { label: string; action: WorksheetStructureAction }[],
+                reason: string | null | undefined,
+              ) => (
+                <div className="worksheet-context-group">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-haspopup="menu"
+                    aria-expanded={submenu === key}
+                    aria-label={title}
+                    className="worksheet-context-parent"
+                    disabled={!onStructure || items.every((item) => !!structureReason(item.action))}
+                    title={reason ?? undefined}
+                    onMouseEnter={() => setSubmenu(key)}
+                    onClick={() => setSubmenu(key)}
+                  >
+                    {title}
+                    <span aria-hidden>▸</span>
+                  </button>
+                  {submenu === key && (
+                    <div
+                      className={`worksheet-context-submenu${menu.flip ? ' is-flip' : ''}`}
+                      role="menu"
+                      aria-label={title}
+                    >
+                      {items.map((item) => {
+                        const itemReason = structureReason(item.action);
+                        return (
+                          <button
+                            key={item.label}
+                            type="button"
+                            role="menuitem"
+                            disabled={!!itemReason}
+                            title={itemReason ?? undefined}
+                            onClick={() => runStructure(item.action)}
+                          >
+                            <span>{item.label}</span>
+                            {itemReason && <small>{itemReason}</small>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+              return (
+                <>
+                  <button type="button" role="menuitem" onClick={() => menuCopy(menu)}>
+                    <Copy size={13} />
+                    复制
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={!editable}
+                    title={editable ? '粘贴到选区左上角' : '只读结果表不能粘贴'}
+                    onClick={() => menuPaste(menu)}
+                  >
+                    <ClipboardPaste size={13} />
+                    粘贴
+                  </button>
+                  <div className="worksheet-context-sep" role="separator" />
+                  {/* 行号只给行操作，列标只给列操作，单元格两者都给。 */}
+                  {menu.kind !== 'column' && group('插入行', 'row', rowItems, insertRowReason)}
+                  {menu.kind !== 'row' &&
+                    group('插入列', 'column', columnItems, insertColumnReason)}
+                  <div className="worksheet-context-sep" role="separator" />
+                  {menu.kind !== 'column' && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={!!rowReason}
+                      title={rowReason ?? undefined}
+                      onClick={() => runStructure(rowDelete)}
+                    >
+                      <Trash2 size={13} />
+                      <span>删除 {rowDelete.count} 行</span>
+                      {rowReason && <small>{rowReason}</small>}
+                    </button>
+                  )}
+                  {menu.kind !== 'row' && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={!!columnReason}
+                      title={columnReason ?? undefined}
+                      onClick={() => runStructure(columnDelete)}
+                    >
+                      <Trash2 size={13} />
+                      <span>删除 {columnDelete.count} 列</span>
+                      {columnReason && <small>{columnReason}</small>}
+                    </button>
+                  )}
+                </>
+              );
+            })()}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

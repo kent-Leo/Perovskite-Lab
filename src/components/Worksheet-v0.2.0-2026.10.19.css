@@ -520,3 +520,96 @@
   --active-color: #1f5fa8;
 }
 
+
+/* 桌面端右键菜单：行 / 列 / 单元格结构操作 */
+.worksheet-context {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 212px;
+  max-width: 288px;
+  /* 不能用 overflow:auto 裁剪：子菜单是绝对定位在菜单外展开的，会被一起剪掉。 */
+  overflow: visible;
+  padding: 5px;
+  background: #fff;
+  border: 1px solid #c6d2df;
+  border-radius: 6px;
+  box-shadow: 0 14px 36px rgba(20, 45, 42, 0.2);
+  color: #324457;
+  font-size: 12px;
+  user-select: none;
+}
+.worksheet-context > button,
+.worksheet-context-group > button,
+.worksheet-context-submenu button {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.worksheet-context > button:hover:enabled,
+.worksheet-context-group > button:hover:enabled,
+.worksheet-context-submenu button:hover:enabled {
+  background: #e7f0fc;
+}
+.worksheet-context > button:disabled,
+.worksheet-context-group > button:disabled,
+.worksheet-context-submenu button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.worksheet-context small {
+  flex-basis: 100%;
+  color: #8a6516;
+  font-size: 10px;
+  line-height: 1.35;
+}
+.worksheet-context-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: #e2e9f0;
+}
+.worksheet-context-group {
+  position: relative;
+}
+.worksheet-context-parent {
+  justify-content: space-between;
+}
+.worksheet-context-group > button span[aria-hidden] {
+  color: #8ca0b3;
+}
+.worksheet-context-submenu {
+  position: absolute;
+  top: -5px;
+  left: calc(100% + 4px);
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 218px;
+  max-width: 288px;
+  padding: 5px;
+  background: #fff;
+  border: 1px solid #c6d2df;
+  border-radius: 6px;
+  box-shadow: 0 14px 36px rgba(20, 45, 42, 0.2);
+}
+.worksheet-context-submenu.is-flip {
+  right: calc(100% + 4px);
+  left: auto;
+}
+.worksheet-context-submenu button span {
+  flex: 1;
+}

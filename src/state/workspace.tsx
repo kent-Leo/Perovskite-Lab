@@ -1,5 +1,5 @@
 import { normalizeConcentrationUnit } from '../domain/math';
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import {
   defaultStyle,
   palette,
@@ -234,9 +234,18 @@ function migrateSheetChartTitles(w: Workspace): Workspace {
   return changed ? { ...w, styles, workbooks } : w;
 }
 const KEY = 'perovskite-lab-workspace-v1';
-function load(): Workspace {
+
+/**
+ * 项目文件 / 草稿读回来的工作区统一走一遍迁移：
+ * 单位归一、补齐多 sheet 结构、把旧版共享图表标题灌到各 sheet。
+ */
+export function prepareWorkspace(w: Workspace): Workspace {
+  return migrateSheetChartTitles(ensureWorkbooks(normalizeWorkspaceUnits(w)));
+}
+
+function load(storageKey: string): Workspace {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(storageKey);
     if (raw) {
       const w = JSON.parse(raw);
       if (
@@ -247,7 +256,7 @@ function load(): Workspace {
         w.styles &&
         w.gradient
       )
-        return migrateSheetChartTitles(ensureWorkbooks(normalizeWorkspaceUnits(w)));
+        return prepareWorkspace(w);
     }
   } catch {
     /* recover corrupt storage */
@@ -260,12 +269,44 @@ type ContextValue = {
   storageError: string;
   notice: string;
   notify: (s: string) => void;
+  /** 当前工作区自上次保存项目文件以来是否有修改。 */
+  dirty: boolean;
+  /** 整体替换工作区（打开项目 / 新建项目 / 载入示例）。 */
+  replaceWorkspace: (next: Workspace, options?: { dirty?: boolean; storageKey?: string }) => void;
+  /** 保存成功后重置未保存标记。 */
+  markSaved: () => void;
+  /** 项目身份变化（另存为）后切换自动保存草稿的键。 */
+  setStorageKey: (key: string) => void;
 };
 const Context = createContext<ContextValue | null>(null);
-export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const [w, setW] = useState(load),
+export function WorkspaceProvider({
+  children,
+  initialWorkspace,
+  storageKey,
+  initialDirty = false,
+}: {
+  children: ReactNode;
+  /** 首帧使用的工作区；缺省时读取浏览器自动保存。 */
+  initialWorkspace?: Workspace;
+  /** 自动保存键；桌面端按项目身份区分，浏览器沿用旧键。 */
+  storageKey?: string;
+  initialDirty?: boolean;
+}) {
+  const keyRef = useRef(storageKey ?? KEY);
+  const initialRef = useRef<Workspace | null>(null);
+  if (!initialRef.current) initialRef.current = initialWorkspace ?? load(keyRef.current);
+  // 已落盘（或从未修改）的工作区快照：与它相同就不必写草稿，避免覆盖/串用项目文件内容。
+  const savedSnapshot = useRef<string | null>(
+    initialWorkspace && !initialDirty ? JSON.stringify(initialRef.current) : null,
+  );
+  const wRef = useRef(initialRef.current);
+  /** 保存 / 切换项目后作废尚未触发的草稿写入，避免刚保存又写回旧草稿。 */
+  const writeGeneration = useRef(0);
+  const [w, setW] = useState(() => initialRef.current!),
     [storageError, setStorageError] = useState(''),
+    [dirty, setDirty] = useState(initialDirty),
     [notice, setNotice] = useState('');
+  wRef.current = w;
   const update = useCallback(
     (patch: Partial<Workspace> | ((w: Workspace) => Partial<Workspace>)) => {
       setW((prev) =>
@@ -274,13 +315,36 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           ...(typeof patch === 'function' ? patch(prev) : patch),
         }),
       );
+      setDirty(true);
     },
     [],
   );
+  const replaceWorkspace = useCallback<ContextValue['replaceWorkspace']>((next, options) => {
+    if (options?.storageKey) keyRef.current = options.storageKey;
+    writeGeneration.current += 1;
+    const value = ensureWorkbooks(next);
+    const nextDirty = options?.dirty ?? false;
+    savedSnapshot.current = nextDirty ? null : JSON.stringify(value);
+    setW(value);
+    setDirty(nextDirty);
+  }, []);
+  const markSaved = useCallback(() => {
+    savedSnapshot.current = JSON.stringify(wRef.current);
+    writeGeneration.current += 1;
+    setDirty(false);
+  }, []);
+  const setStorageKey = useCallback((key: string) => {
+    keyRef.current = key;
+  }, []);
   useEffect(() => {
+    const text = JSON.stringify(w);
+    // 没有未保存修改时不留草稿：正式项目文件才是内容的唯一来源。
+    if (savedSnapshot.current === text) return;
+    const generation = writeGeneration.current;
     const timer = window.setTimeout(() => {
+      if (generation !== writeGeneration.current) return;
       try {
-        localStorage.setItem(KEY, JSON.stringify(w));
+        localStorage.setItem(keyRef.current, text);
         setStorageError('');
       } catch {
         setStorageError('浏览器存储已满，本次修改仅保留在当前页面。请导出数据备份。');
@@ -302,6 +366,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         storageError,
         notice,
         notify: setNotice,
+        dirty,
+        replaceWorkspace,
+        markSaved,
+        setStorageKey,
       }}
     >
       {children}

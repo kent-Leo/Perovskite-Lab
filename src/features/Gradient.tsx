@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Download, Plus } from 'lucide-react';
 import { useWorkspace } from '../state/workspace';
+import { useSheetHistory } from '../state/useSheetHistory-2026.11.5';
 import { useWorkbook } from '../state/useWorkbook';
 import {
   concentrationGradient, convertConcentrationText, convertConcentration,
@@ -8,6 +9,12 @@ import {
 } from '../domain/math';
 import { WorkspaceWorksheet as Worksheet } from '../components/WorkspaceWorksheet-v0.3.1-2026.10.19';
 import type { WorksheetColumn } from '../domain/worksheet-v0.2.0-2026.10.19';
+import {
+  structureAxis,
+  structureCount,
+  structureStart,
+  type WorksheetStructureAction,
+} from '../domain/worksheet-structure-2026.11.5';
 import { exportExcel } from '../services/download';
 import { ErrorNote, Field, Metric, SectionHead } from '../components/ui';
 export function Gradient() {
@@ -15,6 +22,22 @@ export function Gradient() {
     wb = useWorkbook('gradient'),
     g = w.gradient;
   const set = (p: Partial<typeof g>) => update({ gradient: { ...g, ...p } });
+  // 整表撤销 / 重做：目标浓度行与配液表共用一条历史。
+  const history = useSheetHistory<{ targets: string }>(
+    wb.activeId,
+    () => ({ targets: g.targets }),
+    (snapshot) => set({ targets: snapshot.targets }),
+  );
+  const commit = (p: Partial<typeof g>) => {
+    history.record();
+    set(p);
+  };
+  const externalHistory = {
+    canUndo: history.canUndo,
+    canRedo: history.canRedo,
+    undo: history.undo,
+    redo: history.redo,
+  };
   const stockUnit = normalizeConcentrationUnit(g.unit);
   const targetUnit = normalizeConcentrationUnit(g.targetUnit ?? g.unit);
   function changeUnit(kind: 'stock' | 'target', unit: string) {
@@ -42,13 +65,26 @@ export function Gradient() {
         .split(/[\s,，;；]+/)
         .filter(Boolean)
     : g.targets.split('\n');
-  /** Insert a blank target row at any position. */
-  function insertTarget(index: number) {
+  /** 行结构操作：插入 / 追加 / 删除目标浓度行（以换行保存，空行会被保留）。 */
+  function structure(action: WorksheetStructureAction) {
+    if (structureAxis(action) === 'column') return;
     const list = [...targets];
-    const at = Math.max(0, Math.min(index, list.length));
-    list.splice(at, 0, '');
-    set({ targets: list.join('\n') });
+    if (action.type === 'delete-row') {
+      list.splice(structureStart(action), structureCount(action.count));
+      commit({ targets: list.join('\n') });
+      return;
+    }
+    const at =
+      action.type === 'append-row'
+        ? list.length
+        : Math.max(0, Math.min(structureStart(action), list.length));
+    list.splice(at, 0, ...Array.from({ length: structureCount(action.count) }, () => ''));
+    commit({ targets: list.join('\n') });
   }
+  const canStructure = (action: WorksheetStructureAction) =>
+    structureAxis(action) === 'column'
+      ? '梯度配液表的列由公式生成，不能插入或删除；请使用行操作调整目标浓度'
+      : null;
   const result = useMemo(() => {
     try {
       return {
@@ -178,7 +214,9 @@ export function Gradient() {
               onSelectSheet={wb.select}
               onCreateSheet={wb.create}
               onDeleteSheet={wb.remove}
-              onInsertRow={insertTarget}
+              onStructure={structure}
+              canStructure={canStructure}
+              externalHistory={externalHistory}
               minRows={Math.max(1, targets.length)}
               columns={
                 [
@@ -215,7 +253,7 @@ export function Gradient() {
                   '',
                 ];
               })}
-              onChange={(rows) => set({ targets: rows.map((r) => r[0]).join('\n') })}
+              onChange={(rows) => commit({ targets: rows.map((r) => r[0]).join('\n') })}
               cellLabel={(i, c) =>
                 `${['梯度目标浓度', '梯度组别', '梯度母液体积', '梯度固定添加', '梯度预计溶剂', '梯度最终体积', '梯度操作'][c]} ${i + 1}`
               }
@@ -229,7 +267,7 @@ export function Gradient() {
                   <button
                     className="text-button"
                     aria-label={`删除梯度 ${i + 1}`}
-                    onClick={() => set({ targets: targets.filter((_, j) => j !== i).join('\n') })}
+                    onClick={() => structure({ type: 'delete-row', index: i, count: 1 })}
                   >
                     删除
                   </button>
