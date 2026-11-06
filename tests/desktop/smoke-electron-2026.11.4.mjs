@@ -27,6 +27,9 @@ const packagedApp = path.join(
 const usePackaged = process.env.APP_PATH ? true : process.env.SMOKE_PACKAGED === '1';
 const executablePath = process.env.APP_PATH ?? (usePackaged ? packagedApp : localElectron);
 const appArgs = usePackaged ? [] : [root];
+// Coding hosts may run their own Electron as Node; the tested GUI must not inherit that flag.
+const launchEnv = { ...process.env };
+delete launchEnv.ELECTRON_RUN_AS_NODE;
 
 if (!(await exists(path.join(root, 'dist-electron/main.cjs')))) {
   console.error('✗ 缺少 dist-electron/main.cjs，请先执行 npm run build:app');
@@ -36,14 +39,15 @@ if (usePackaged && !(await exists(executablePath))) {
   console.error(`✗ 找不到安装包：${executablePath}`);
   process.exit(1);
 }
-const userDataDir = path.join(os.tmpdir(), 'perovskite-lab-desktop-smoke');
+const userDataDir = path.join(os.tmpdir(), `perovskite-lab-desktop-smoke-2026.11.6-${process.pid}`);
 const importUserDataDir = `${userDataDir}-import`;
 
-const projectA = path.join(os.tmpdir(), 'plab-smoke-A.plab');
-const projectB = path.join(os.tmpdir(), 'plab-smoke-B.plab');
-const projectBroken = path.join(os.tmpdir(), 'plab-smoke-broken.plab');
-const titleA = `plab-smoke-A.plab — Perovskite Lab v`;
-const titleB = `plab-smoke-B.plab — Perovskite Lab v`;
+const projectA = path.join(os.tmpdir(), `plab-smoke-A-2026.11.6-${process.pid}.plab`);
+const projectB = path.join(os.tmpdir(), `plab-smoke-B-2026.11.6-${process.pid}.plab`);
+const projectBroken = path.join(os.tmpdir(), `plab-smoke-broken-2026.11.6-${process.pid}.plab`);
+const projectLegacy = path.join(os.tmpdir(), `plab-smoke-v1.1.0-2026.11.6-${process.pid}.plab`);
+const titleA = `${path.basename(projectA)} — Perovskite Lab v`;
+const titleB = `${path.basename(projectB)} — Perovskite Lab v`;
 
 const fail = (message) => {
   console.error(`✗ ${message}`);
@@ -76,6 +80,17 @@ const projectOf = async (file) => {
   }
 };
 
+async function groupedState(win, expectedName, expectedValues) {
+  await win.getByRole('link', { name: '对象筛选', exact: true }).click();
+  if (await win.getByLabel('绘图类型', { exact: true }).inputValue() !== 'grouped') fail('重开项目未恢复分组绘图类型');
+  if (await win.getByLabel('系列名称 1', { exact: true }).inputValue() !== expectedName) fail('项目间系列名称串联');
+  if (await win.getByLabel('分组数值 1 1', { exact: true }).inputValue() !== expectedValues) fail('重复测量未从项目文件完整恢复');
+  if (await win.getByLabel('误差棒', { exact: true }).inputValue() !== 'sd') fail('误差棒设置未恢复');
+  if (await win.getByLabel('柱宽', { exact: true }).inputValue() !== '36') fail('分组样式未恢复');
+  const errors = await win.locator('[data-testid="grouped-screening-chart"] [data-error-bar]').count();
+  if (errors !== 2) fail(`项目重开后的误差棒数量异常 ${errors}`);
+}
+
 await Promise.all(
   [projectA, projectB, projectBroken, userDataDir, importUserDataDir].map((target) =>
     rm(target, { force: true, recursive: true }),
@@ -84,6 +99,7 @@ await Promise.all(
 await writeFile(projectBroken, '这不是项目文件', 'utf8');
 
 const app = await electron.launch({
+  env: launchEnv,
   executablePath,
   args: [...appArgs, `--user-data-dir=${userDataDir}`],
 });
@@ -155,6 +171,17 @@ try {
   await win.getByRole('link', { name: '浓度梯度', exact: true }).click();
   const stock = win.getByLabel('母液浓度', { exact: true });
   await stock.fill('111');
+  await win.getByRole('link', { name: '对象筛选', exact: true }).click();
+  await win.getByLabel('绘图类型', { exact: true }).selectOption('grouped');
+  await win.getByLabel('分组数据输入').selectOption('replicates');
+  await win.getByLabel('误差棒', { exact: true }).selectOption('sd');
+  await win.getByLabel('系列名称 1', { exact: true }).fill('项目 A 探针');
+  await win.getByLabel('柱宽', { exact: true }).fill('36');
+  await win.getByLabel('分组对象 1', { exact: true }).evaluate((input) => {
+    const clipboardData = new DataTransfer(); clipboardData.setData('text/plain', 'Cd²⁺\t1;;2;3\t0\t-3;-1;1');
+    input.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }));
+  });
+  await win.getByRole('link', { name: '浓度梯度', exact: true }).click();
   await until(async () => (await windowTitle(app)).startsWith('*'), '未保存标记 *');
   await setDialog('__plabSavePath', projectA);
   await sendCommand('save');
@@ -166,10 +193,22 @@ try {
   console.log(`  保存 A   ${savedA?.format ?? 'FAILED'} · stock=${savedA?.workspace?.gradient?.stock}`);
   if (savedA?.format !== 'perovskite-lab-project') fail('A.plab 不是项目文件格式');
   if (savedA?.workspace?.gradient?.stock !== '111') fail('A.plab 没有写入当前工作区数据');
+  const savedGroup = savedA?.workspace?.groupedScreening;
+  if (JSON.stringify(savedGroup?.categories[0]?.cells[savedGroup.series[0].id]?.replicates) !== JSON.stringify(['1', '', '2', '3'])) fail('项目未保留重复测量的空项');
+  // v1.1.0 schema fixture: no new grouped fields, all legacy data retained.
+  const legacy = structuredClone(savedA);
+  legacy.appVersion = '1.1.0';
+  delete legacy.workspace.groupedScreening;
+  delete legacy.workspace.screeningChartType;
+  await writeFile(projectLegacy, JSON.stringify(legacy), 'utf8');
   if ((await windowTitle(app)).includes('*')) fail('保存后标题仍带未保存标记');
 
   // —— 另存为 B：A 与 B 互相独立 ——
   await stock.fill('222');
+  await win.getByRole('link', { name: '对象筛选', exact: true }).click();
+  await win.getByLabel('系列名称 1', { exact: true }).fill('项目 B 探针');
+  await win.getByLabel('分组数值 1 1', { exact: true }).fill('10;20;30');
+  await win.getByRole('link', { name: '浓度梯度', exact: true }).click();
   await setDialog('__plabSavePath', projectB);
   await sendCommand('save-as');
   await until(
@@ -204,6 +243,8 @@ try {
     '打开 A.plab',
   );
   await until(async () => (await stock.inputValue()) === '111', '打开 A 后加载 A 的实际内容');
+  await groupedState(win, '项目 A 探针', '1;;2;3');
+  await win.getByRole('link', { name: '浓度梯度', exact: true }).click();
   if ((await projectOf(projectB))?.workspace?.gradient?.stock !== '333') fail('打开 A 时覆盖了 B.plab');
 
   // —— 损坏的项目文件：保持当前项目不变 ——
@@ -224,6 +265,7 @@ try {
 
 // —— 双击 .plab 启动：命令行带文件，页面就绪后主进程推送 loaded 指令 ——
 const appWithFile = await electron.launch({
+  env: launchEnv,
   executablePath,
   args: [...appArgs, `--user-data-dir=${importUserDataDir}`, projectA],
 });
@@ -237,14 +279,16 @@ try {
   const startupTitle = await windowTitle(appWithFile);
   console.log(`  双击打开 ${startupTitle} · stock=${loaded}`);
   if (loaded !== '111') fail('双击 .plab 启动后没有加载 A.plab 的内容');
-  if (!startupTitle.startsWith('plab-smoke-A.plab'))
+  if (!startupTitle.startsWith(path.basename(projectA)))
     fail(`双击启动的窗口标题异常：${startupTitle}`);
+  await groupedState(win2, '项目 A 探针', '1;;2;3');
 } finally {
   await appWithFile.close();
 }
 
 // —— 关闭后再打开：双击 B.plab 必须显示 B，而不是上次的 A ——
 const appWithB = await electron.launch({
+  env: launchEnv,
   executablePath,
   args: [...appArgs, `--user-data-dir=${importUserDataDir}`, projectB],
 });
@@ -257,8 +301,22 @@ try {
   const loaded = await win3.getByLabel('母液浓度', { exact: true }).inputValue();
   console.log(`  双击 B   ${await windowTitle(appWithB)} · stock=${loaded}`);
   if (loaded !== '333') fail('双击 B.plab 后显示的不是 B 的数据（可能是上次自动恢复的工作区）');
+  await groupedState(win3, '项目 B 探针', '10;20;30');
 } finally {
   await appWithB.close();
 }
+
+const legacyApp = await electron.launch({ env: launchEnv, executablePath, args: [...appArgs, `--user-data-dir=${importUserDataDir}`, projectLegacy] });
+try {
+  const win = await legacyApp.firstWindow({ timeout: 30000 });
+  await win.waitForSelector('#root > *', { timeout: 30000 });
+  await win.getByRole('link', { name: '对象筛选', exact: true }).click();
+  if (await win.getByLabel('绘图类型', { exact: true }).inputValue() !== 'single') fail('v1.1.0 项目没有使用单系列默认值');
+  await win.getByRole('link', { name: '浓度梯度', exact: true }).click();
+  if (await win.getByLabel('母液浓度', { exact: true }).inputValue() !== '111') fail('旧项目被当前应用缓存覆盖');
+  console.log('  旧项目   v1.1.0 单系列默认值及原数据恢复通过');
+} finally { await legacyApp.close(); }
+
+await Promise.all([projectA, projectB, projectBroken, projectLegacy, userDataDir, importUserDataDir].map((target) => rm(target, { force: true, recursive: true })));
 
 if (!process.exitCode) console.log('✓ 桌面端冒烟测试通过');

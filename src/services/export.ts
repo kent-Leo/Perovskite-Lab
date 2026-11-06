@@ -1,6 +1,6 @@
 import type { ChartStyle } from '../domain/types';
 import type { PDFFont } from 'pdf-lib';
-import { pdfFonts, svgExportFonts } from '../domain/chart-fonts-2026.11.3';
+import { pdfFonts, svgExportFonts, legendTypography } from '../domain/chart-fonts-2026.11.3';
 import { downloadBlob, filename } from './download';
 const svgFontData = new Map<string, Promise<string>>();
 const rasterFonts = new Map<string, Promise<void>>();
@@ -24,7 +24,11 @@ async function embeddedFontData({ family, file }: { family: string; file: string
   return { family, font: await pending };
 }
 async function portableSVG(svg: string, style: ChartStyle) {
-  const selected = svgExportFonts(style, /[^\x00-\x7f]/.test(svg));
+  const hasWideText = /[^\x00-\x7f]/.test(svg);
+  const selected = [...new Map([
+    ...svgExportFonts(style, hasWideText),
+    ...(style.legendFontFamily ? svgExportFonts(legendTypography(style), hasWideText) : []),
+  ].map((font) => [font.family, font])).values()];
   if (!selected.length) return { svg, fonts: [] };
   const fonts = await Promise.all(selected.map(embeddedFontData));
   return {
@@ -151,22 +155,25 @@ export async function exportChart(
     return;
   }
   const [pdf, fontkit] = await Promise.all([import('pdf-lib'), import('@pdf-lib/fontkit')]);
-  const fontBytes = await Promise.all(pdfFonts(style).map(async ({ file }) => {
+  const chartFonts = pdfFonts(style), legendFonts = pdfFonts(legendTypography(style));
+  const selectedFonts = [...new Map([...chartFonts, ...legendFonts].map((font) => [font.family, font])).values()];
+  const fontBytes = await Promise.all(selectedFonts.map(async ({ file }) => {
     const response = await fetch(`${import.meta.env.BASE_URL}fonts/${file}.ttf`);
     if (!response.ok) throw new Error('PDF 字体读取失败，请通过本地服务器打开网页');
     return response.arrayBuffer();
   }));
   const documentPDF = await pdf.PDFDocument.create();
   documentPDF.registerFontkit(fontkit.default);
-  const fonts: { font: PDFFont; characters: Set<number> }[] = [];
-  for (const bytes of fontBytes) {
+  const fonts: { family: string; font: PDFFont; characters: Set<number> }[] = [];
+  for (const [index, bytes] of fontBytes.entries()) {
     const font = await documentPDF.embedFont(bytes, { subset: false });
-    fonts.push({ font, characters: new Set(font.getCharacterSet()) });
+    fonts.push({ family: selectedFonts[index].family, font, characters: new Set(font.getCharacterSet()) });
   }
-  const textRuns = (content: string) => {
+  const textRuns = (content: string, legend: boolean) => {
+    const preferred = (legend ? legendFonts : chartFonts).map(({ family }) => fonts.find((font) => font.family === family)!);
     const runs: { font: PDFFont; text: string }[] = [];
     for (const character of content) {
-      const { font } = fonts.find(({ characters }) => characters.has(character.codePointAt(0)!)) ?? fonts[fonts.length - 1];
+      const { font } = preferred.find(({ characters }) => characters.has(character.codePointAt(0)!)) ?? preferred[preferred.length - 1];
       const last = runs.at(-1);
       if (last?.font === font) last.text += character;
       else runs.push({ font, text: character });
@@ -185,6 +192,32 @@ export async function exportChart(
       parseInt(h.slice(4, 6), 16) / 255,
     );
   };
+  // Native axial shading keeps the SVG's continuous vertical gradient vector in PDF.
+  const shadings = new Map<string, ReturnType<typeof pdf.PDFName.of>>();
+  function gradientRect(el: Element, id: string) {
+    let name = shadings.get(id);
+    if (!name) {
+      const gradient = root.querySelector(`linearGradient[id="${id}"]`);
+      const stops = Array.from(gradient?.querySelectorAll('stop') ?? []);
+      const top = color(stops[0]?.getAttribute('stop-color') ?? null);
+      const bottom = color(stops.at(-1)?.getAttribute('stop-color') ?? null);
+      if (!top || !bottom) throw new Error('PDF 渐变颜色无效');
+      const shading = documentPDF.context.register(documentPDF.context.obj({
+        ShadingType: 2, ColorSpace: 'DeviceRGB', Coords: [0, 1, 0, 0], Extend: [true, true],
+        Function: { FunctionType: 2, Domain: [0, 1], C0: [top.red, top.green, top.blue], C1: [bottom.red, bottom.green, bottom.blue], N: 1 },
+      }));
+      const resources = page.node.Resources()!;
+      let dictionary = resources.lookupMaybe(pdf.PDFName.of('Shading'), pdf.PDFDict);
+      if (!dictionary) { dictionary = documentPDF.context.obj({}); resources.set(pdf.PDFName.of('Shading'), dictionary); }
+      name = pdf.PDFName.of(`GroupedGradient${shadings.size}`);
+      dictionary.set(name, shading); shadings.set(id, name);
+    }
+    const x = num(el, 'x') * scale, y = (H - num(el, 'y') - num(el, 'height')) * scale,
+      width = num(el, 'width') * scale, height = num(el, 'height') * scale;
+    page.pushOperators(pdf.pushGraphicsState(), pdf.rectangle(x, y, width, height), pdf.clip(), pdf.endPath(),
+      pdf.concatTransformationMatrix(width, 0, 0, height, x, y),
+      pdf.PDFOperator.of(pdf.PDFOperatorNames.ShadingFill, [name]), pdf.popGraphicsState());
+  }
   function draw(el: Element) {
     const tag = el.tagName;
     if (tag === 'defs' || tag === 'clipPath') return;
@@ -207,14 +240,20 @@ export async function exportChart(
       // Unfilled rects are transparent legend drag hit areas. pdf-lib would leave
       // their path unpainted, and because q/Q do not reset the current path the
       // next legend stroke outlines them as colored boxes. Skip them entirely.
-      const fill = color(el.getAttribute('fill'));
-      if (fill)
+      const gradient = el.getAttribute('fill')?.match(/^url\(#([\w-]+)\)$/)?.[1];
+      if (gradient) gradientRect(el, gradient);
+      const fill = gradient ? undefined : color(el.getAttribute('fill')),
+        border = color(el.getAttribute('stroke')),
+        borderWidth = num(el, 'stroke-width', 1);
+      if (fill || (border && borderWidth > 0))
         page.drawRectangle({
           x: num(el, 'x') * scale,
           y: (H - num(el, 'y') - num(el, 'height')) * scale,
           width: num(el, 'width') * scale,
           height: num(el, 'height') * scale,
           color: fill,
+          borderColor: border,
+          borderWidth: border ? borderWidth * scale : undefined,
         });
     }
     if (tag === 'line' || tag === 'polyline') {
@@ -280,7 +319,7 @@ export async function exportChart(
       };
       collect(el, size, 0);
       const runs = pieces.flatMap((piece) =>
-        textRuns(piece.text).map((run) => ({ ...run, size: piece.size, shift: piece.shift })),
+        textRuns(piece.text, !!el.closest('[data-legend]')).map((run) => ({ ...run, size: piece.size, shift: piece.shift })),
       );
       const width = runs.reduce(
         (sum, run) => sum + run.font.widthOfTextAtSize(run.text, run.size),

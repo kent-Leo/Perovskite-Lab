@@ -11,7 +11,7 @@ import {
   latinExportNote,
   previewRuns,
 } from '../domain/chart-fonts-2026.11.3';
-import { chartAxes, axisSides, axisNames, type AxisSide, type AxisStyle, type ChartStyle, type PlotData } from '../domain/types';
+import { chartAxes, axisSides, axisNames, type AxisSide, type AxisStyle, type ChartStyle, type PlotData, type GroupedBarOptions } from '../domain/types';
 import { exportChart } from '../services/export';
 import { useWorkspace } from '../state/workspace';
 import { Empty, ErrorNote, Field } from './ui';
@@ -40,6 +40,7 @@ export function ChartPanel({
     onChange: (patch: Partial<ChartStyle>) => void;
     renderSVG?: (style: ChartStyle) => string;
     categorical?: boolean;
+    grouped?: { options: GroupedBarOptions; onChange: (patch: Partial<GroupedBarOptions>) => void };
     /** Recognition paper figures have direct labels and only the relevant axes. */
     paper?: 'scores' | 'tree';
     initialSettingsOpen?: boolean;
@@ -148,7 +149,7 @@ export function ChartPanel({
     }
   }
   return (
-    <div className={`chart-layout ${settings ? '' : 'settings-hidden'} ${custom?.paper ? 'recognition-paper-chart' : ''}`}>
+    <div className={`chart-layout ${settings ? '' : 'settings-hidden'} ${custom?.paper ? 'recognition-paper-chart' : ''} ${custom?.grouped ? 'grouped-chart' : ''}`}>
       <section className="chart-card">
         <div className="chart-head">
           <div>
@@ -186,7 +187,7 @@ export function ChartPanel({
             <Download size={15} /> 导出图表
           </span>
           <div>
-            {(custom ? ['png', 'svg'] as const : ['png', 'svg', 'pdf'] as const).map((format, i) => {
+            {(custom && !custom.grouped ? ['png', 'svg'] as const : ['png', 'svg', 'pdf'] as const).map((format, i) => {
               const Icon = [Image, FileCode2, FileText][i];
               return (
                 <button
@@ -251,7 +252,7 @@ export function ChartPanel({
                   onChange={(e) => onChartTitleChange(e.target.value)}
                 />
               </Field>
-              <div className="form-grid">
+              {!custom?.grouped && <div className="form-grid">
                 <Field label="线宽">
                   <input
                     type="number"
@@ -276,7 +277,26 @@ export function ChartPanel({
                     }
                   />
                 </Field>
-              </div>
+              </div>}
+              {custom?.grouped && <>
+                <Field label="柱体填充"><select value={custom.grouped.options.fill} onChange={(e) => custom.grouped!.onChange({ fill: e.target.value as GroupedBarOptions['fill'] })}>
+                  <option value="solid">纯色</option><option value="gradient">垂直渐变</option>
+                </select></Field>
+                <div className="form-grid">
+                  {([
+                    ['barWidth', '柱宽', 2, 100, 1], ['innerGap', '组内间距', 0, 100, 1],
+                    ['groupGap', '组间间距', 0, 200, 1], ['borderWidth', '柱边框粗细', 0, 5, 0.5],
+                    ['errorWidth', '误差棒线宽', 0.5, 5, 0.5], ['errorCapWidth', '误差棒端帽宽度', 0, 60, 1],
+                    ['categoryAngle', '分类标签角度', -90, 90, 5],
+                  ] as const).map(([key, label, min, max, step]) => <Field key={key} label={label}>
+                    <input type="number" min={min} max={max} step={step} value={custom.grouped!.options[key]}
+                      onChange={(e) => custom.grouped!.onChange({ [key]: Math.max(min, Math.min(max, Number(e.target.value))) })} />
+                  </Field>)}
+                  <Field label="柱边框颜色"><input type="color" value={custom.grouped.options.borderColor} onChange={(e) => custom.grouped!.onChange({ borderColor: e.target.value })} /></Field>
+                  <Field label="误差棒颜色"><input type="color" value={custom.grouped.options.errorColor} onChange={(e) => custom.grouped!.onChange({ errorColor: e.target.value })} /></Field>
+                </div>
+                <p className="muted">数值标签或端帽较宽时，组内留白会自动扩展，避免相邻系列遮挡。</p>
+              </>}
               <Field label="字体" hint="同时作为中西文的默认字体；单独设置后以中文 / 西文选择为准">
                 <select
                   value={style.fontFamily}
@@ -383,11 +403,18 @@ export function ChartPanel({
                   onChange={(e) => set({ legend: e.target.value as ChartStyle['legend'] })}
                 >
                   <option value="right">右侧</option>
+                  <option value="top">顶部</option>
                   <option value="bottom">底部</option>
                   <option value="free">自由拖动</option>
                   <option value="none">隐藏</option>
                 </select>
               </Field>
+              {custom?.grouped && <Field label="图例字体" hint="跟随时沿用中西文字体；单独选择只影响图例。">
+                <select value={style.legendFontFamily ?? ''} onChange={(e) => set({ legendFontFamily: e.target.value || undefined })}>
+                  <option value="">跟随图表字体</option>
+                  {LATIN_FONT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </Field>}
               {style.legend === 'free' && (
                 <>
                   <div className="form-grid">
@@ -433,7 +460,7 @@ export function ChartPanel({
                   </button>
                 </>
               )}
-              <p className="muted">图例可直接在图中拖动；位置与字号随 {custom ? 'PNG / SVG' : 'PNG / SVG / PDF'} 导出。</p></>}
+              <p className="muted">图例可直接在图中拖动；位置与字号随 {custom && !custom.grouped ? 'PNG / SVG' : 'PNG / SVG / PDF'} 导出。</p></>}
               {!custom?.categorical && <>{!custom?.paper && <label className="check-line">
                 <input
                   type="checkbox"
@@ -456,7 +483,7 @@ export function ChartPanel({
                   checked={!!style.pointValues}
                   onChange={(e) => set({ pointValues: e.target.checked })}
                 />
-                显示数据点数值
+                {custom?.grouped ? '显示柱顶数值' : '显示数据点数值'}
               </label>
               {!custom && <label className="check-line">
                 <input
@@ -564,7 +591,7 @@ export function ChartPanel({
                 <strong>{Math.round((style.widthCm / 2.54) * style.dpi)} px</strong>
                 <span>PNG 宽度 · 白色背景</span>
               </div>
-              <p className="muted">{custom ? 'SVG 保留矢量；SVG 与 PNG 均使用内置中文与科学字符字体。' : 'SVG / PDF 保留矢量。PDF 使用内置中文与科学字符字体。'}</p>
+              <p className="muted">{custom && !custom.grouped ? 'SVG 保留矢量；SVG 与 PNG 均使用内置中文与科学字符字体。' : 'SVG / PDF 保留矢量。PDF 使用内置中文与科学字符字体。'}</p>
             </>
           )}
         </aside>

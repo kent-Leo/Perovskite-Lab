@@ -21,6 +21,7 @@ export interface SheetGalleryChart {
   error?: string;
   /** The sheet's own chart title (no sheet name); omitted keeps the shared style title. */
   title?: string;
+  style?: ChartStyle;
 }
 
 /**
@@ -92,6 +93,7 @@ type RenderedSheetChart = {
 };
 
 function renderSheetChart(chart: SheetGalleryChart, style: ChartStyle): RenderedSheetChart {
+  style = chart.style ?? style;
   const upstreamError = chart.error?.trim();
   if (upstreamError) return { chart, title: '图表待生成', detail: upstreamError };
   if (!chart.data)

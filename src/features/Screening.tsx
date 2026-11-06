@@ -9,6 +9,8 @@ import {
   uid,
   type ChartStyle,
   type ObjectRow,
+  type GroupedBarSheet,
+  type ScreeningChartType,
   type PlotData,
   type ResponseMode,
   type Role,
@@ -32,6 +34,9 @@ import {
 } from '../domain/worksheet-structure-2026.11.5';
 import { sheetChartTitle, type ScreeningSheetPayload } from '../domain/workbook';
 import { exportExcel } from '../services/download';
+import { defaultGroupedBar, groupedPlotData } from '../domain/grouped-bar-2026.11.6';
+import { GroupedScreening, type GroupedChange } from './GroupedScreening-2026.11.6';
+import './GroupedScreening-2026.11.6.css';
 
 /** Page default chart title used when a sheet has no title of its own. */
 const BASE_TITLE = '分析对象筛选';
@@ -53,6 +58,10 @@ interface ScreeningChartResult {
  */
 function screeningChart(payload: ScreeningSheetPayload, style: ChartStyle): ScreeningChartResult {
   try {
+    if (payload.screeningChartType === 'grouped') {
+      const grouped = payload.groupedScreening;
+      return { values: [], f0: NaN, data: grouped ? groupedPlotData(grouped) : null, error: '' };
+    }
     const blank = payload.objects.find((o) => o.id === payload.blankId),
       f0 = numeric(blank?.intensity) ?? NaN;
     const values = payload.objects.map((o) => {
@@ -87,15 +96,21 @@ export function Screening({ onImport }: { onImport: () => void }) {
   const { w, update, notify } = useWorkspace();
   const wb = useWorkbook('screening');
   const [viewMode, setViewMode] = useState<PlotViewMode>('active');
+  const isGrouped = w.screeningChartType === 'grouped';
+  const group = useMemo(() => w.groupedScreening ?? defaultGroupedBar(), [w.groupedScreening]);
   // 整表撤销 / 重做：单元格编辑与行列结构操作共用一条历史。
-  const history = useSheetHistory<{ objects: ObjectRow[]; blankId: string }>(
+  const history = useSheetHistory<{ objects: ObjectRow[]; blankId: string; screeningChartType?: ScreeningChartType; groupedScreening?: GroupedBarSheet }>(
     wb.activeId,
-    () => ({ objects: w.objects.map((o) => ({ ...o })), blankId: w.blankId }),
-    (snapshot) => update({ objects: snapshot.objects, blankId: snapshot.blankId }),
+    () => structuredClone({ objects: w.objects, blankId: w.blankId, screeningChartType: w.screeningChartType, groupedScreening: w.groupedScreening }),
+    (snapshot) => update(snapshot),
   );
   const commit = (patch: Partial<typeof w>) => {
     history.record();
     update(patch);
+  };
+  const setGroup = (change: GroupedChange) => {
+    history.record();
+    update((previous) => ({ groupedScreening: typeof change === 'function' ? change(previous.groupedScreening ?? defaultGroupedBar()) : change }));
   };
   const externalHistory = {
     canUndo: history.canUndo,
@@ -106,10 +121,10 @@ export function Screening({ onImport }: { onImport: () => void }) {
   const result = useMemo(
     () =>
       screeningChart(
-        { objects: w.objects, blankId: w.blankId, screenMode: w.screenMode },
+        { objects: w.objects, blankId: w.blankId, screenMode: w.screenMode, screeningChartType: w.screeningChartType, groupedScreening: w.groupedScreening },
         w.styles.screening,
       ),
-    [w.objects, w.blankId, w.screenMode, w.styles.screening],
+    [w.objects, w.blankId, w.screenMode, w.styles.screening, w.screeningChartType, w.groupedScreening],
   );
   // 「全部 sheet」画廊：逐 sheet 用同一纯函数计算，未激活 sheet 的数据来自 store。
   const charts: SheetGalleryChart[] = wb.snapshots.map(({ tab, payload }) => {
@@ -120,6 +135,7 @@ export function Screening({ onImport }: { onImport: () => void }) {
       title: sheetChartTitle(tab, BASE_TITLE),
       data: chart.data,
       error: chart.error || undefined,
+      style: (payload as ScreeningSheetPayload).screeningChartType === 'grouped' ? (payload as ScreeningSheetPayload).groupedScreening?.style : undefined,
     };
   });
   function move(from: number, to: number) {
@@ -169,6 +185,11 @@ export function Screening({ onImport }: { onImport: () => void }) {
   return (
     <>
       <div className="analysis-controls">
+        <Field label="绘图类型"><select value={w.screeningChartType ?? 'single'} onChange={(e) => commit({
+          screeningChartType: e.target.value as ScreeningChartType,
+          ...(e.target.value === 'grouped' && !w.groupedScreening ? { groupedScreening: group } : {}),
+        })}><option value="single">单系列柱状图</option><option value="grouped">分组柱状图</option></select></Field>
+        {!isGrouped && <>
         <Field label="响应方式">
           <select
             value={w.screenMode}
@@ -203,6 +224,8 @@ export function Screening({ onImport }: { onImport: () => void }) {
         <div className="inline-explainer">
           目标物使用强调色突出显示。对象名称支持离子、分子及任意实验组。
         </div>
+        </>}
+        {isGrouped && <p className="inline-explainer">多系列统计值对比 · 当前 Sheet 独立保存 · 单系列数据可随时切回</p>}
       </div>
       {result.error && <ErrorNote>{result.error}</ErrorNote>}
       <PlotSheetBar
@@ -223,11 +246,16 @@ export function Screening({ onImport }: { onImport: () => void }) {
         />
       ) : (
         <ChartPanel
+          key={isGrouped ? `grouped-${wb.activeId}` : 'single'}
           kind="screening"
           title={BASE_TITLE}
           chartTitle={wb.chartTitle}
           onChartTitleChange={wb.setChartTitle}
-          subtitle={`${wb.activeName} · ${responses[w.screenMode]} · ${w.objects.length} 个对象`}
+          subtitle={isGrouped ? `${wb.activeName} · ${group.categories.length} 个分类 · ${group.series.filter((s) => s.visible).length} 个可见系列` : `${wb.activeName} · ${responses[w.screenMode]} · ${w.objects.length} 个对象`}
+          custom={isGrouped ? { id: 'grouped-screening', name: '分组柱状图', style: group.style,
+            onChange: (patch) => setGroup((current) => ({ ...current, style: { ...current.style, ...patch } })),
+            grouped: { options: group.options, onChange: (patch) => setGroup((current) => ({ ...current, options: { ...current.options, ...patch } })) },
+          } : undefined}
           data={
             result.data ?? {
               categories: w.objects.map((o) => o.name),
@@ -236,6 +264,7 @@ export function Screening({ onImport }: { onImport: () => void }) {
           }
         />
       )}
+      {isGrouped ? <GroupedScreening key={wb.activeId} sheet={group} onChange={setGroup} workbook={wb} history={history} /> : <>
       <div className="metrics-row three">
         <Metric label="分析对象" value={String(w.objects.length)} unit="组" />
         <Metric label="空白强度 F₀" value={fmt(result.f0, 6)} unit="a.u." />
@@ -396,6 +425,7 @@ export function Screening({ onImport }: { onImport: () => void }) {
           </button>
         </div>
       </section>
+      </>}
     </>
   );
 }
