@@ -1,8 +1,10 @@
 import type {
   CalibrationRow,
   GradientSettings,
+  GroupedBarSheet,
   ObjectRow,
   ResponseMode,
+  ScreeningChartType,
   SheetMapping,
   Spectrum,
   WorkbookId,
@@ -58,6 +60,8 @@ export interface ScreeningSheetPayload {
   objects: ObjectRow[];
   blankId: string;
   screenMode: ResponseMode;
+  screeningChartType?: ScreeningChartType;
+  groupedScreening?: GroupedBarSheet;
 }
 
 export interface CalibrationSheetPayload {
@@ -107,6 +111,8 @@ export interface WorkbookHost {
   objects: ObjectRow[];
   blankId: string;
   screenMode: ResponseMode;
+  screeningChartType?: ScreeningChartType;
+  groupedScreening?: GroupedBarSheet;
   calibration: CalibrationRow[];
   calMode: ResponseMode;
   calF0: string;
@@ -477,7 +483,15 @@ export function capturePayload(w: WorkbookHost, page: WorkbookId): SheetPayload 
       };
     }
     case 'screening':
-      return { objects: w.objects, blankId: w.blankId, screenMode: w.screenMode };
+      return {
+        objects: w.objects,
+        blankId: w.blankId,
+        screenMode: w.screenMode,
+        ...(w.screeningChartType === 'grouped' || w.groupedScreening
+          ? { screeningChartType: w.screeningChartType ?? 'single' }
+          : {}),
+        ...(w.groupedScreening ? { groupedScreening: w.groupedScreening } : {}),
+      };
     case 'calibration':
       return {
         calibration: w.calibration,
@@ -517,7 +531,13 @@ export function applyPayload(
     }
     case 'screening': {
       const rows = payload as ScreeningSheetPayload;
-      return { objects: rows.objects, blankId: rows.blankId, screenMode: rows.screenMode };
+      return {
+        objects: rows.objects,
+        blankId: rows.blankId,
+        screenMode: rows.screenMode,
+        screeningChartType: rows.screeningChartType === 'grouped' ? 'grouped' : 'single',
+        groupedScreening: rows.groupedScreening,
+      };
     }
     case 'calibration': {
       const cal = payload as CalibrationSheetPayload;

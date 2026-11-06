@@ -25,6 +25,7 @@ Perovskite-Lab 把这个方向的标准流程内置好了：**Origin 半小时�
 - 📉 **Stern-Volmer 拟合**：猝灭数据一键拟合，猝灭率支持直接录入
 - 🔬 **比率探针分析**：比率荧光探针的数据处理与分析
 - 🎯 **离子筛选与校准**：离子筛选图、线性校准曲线绘制，检测离子种类可自定义
+- 📊 **分组柱状图**：多探针 / 多条件宽表，重复测量 Mean、样本 SD、SEM 与手动误差；每个 Sheet 独立保存，支持 SVG、PNG、PDF 和原始数据 Excel 导出
 - ⚗️ **实验计算**：前驱体摩尔浓度计算、母液稀释计算器、试剂称量
 - 📋 **多工作表管理**：分组管理多组实验数据，本地持久保存；桌面端可存为 `.plab` 项目文件
 - 🔒 **隐私安全**：所有数据保存在浏览器本地，不上传服务器
@@ -37,7 +38,7 @@ Perovskite-Lab 把这个方向的标准流程内置好了：**Origin 半小时�
 npm run app:dev      # 本地启动桌面端
 npm run dist:mac     # 打包 dmg / zip（当前架构）
 npm run dist:win     # 打包 Windows 安装包（x64）
-npm run test:desktop # 启动打包产物做冒烟测试
+npm run test:desktop # 使用当前 Electron 构建做项目文件冒烟测试
 ```
 
 ## 📌 适合谁
@@ -51,6 +52,7 @@ npm run test:desktop # 启动打包产物做冒烟测试
 - Spectrum processing (PL / UV-Vis) and publication-ready plots
 - Stern–Volmer quenching fits and ratiometric probe analysis
 - Ion screening charts and linear calibration curves (customizable target ions)
+- Grouped bars with replicates, sample SD / SEM, editable vector exports and Excel data
 - Precursor concentration and stock-solution dilution calculators
 - Multi-sheet experiment data management — everything stored locally, nothing uploaded
 
@@ -65,8 +67,9 @@ No installation, no sign-up. Try it live: **https://lab.luzen.org**
 
 ## 📝 开发与更新记录
 
-当前本地开发版本：**v1.1.0**，分支 `feature/v1.1.0`。
+当前本地开发版本：**v1.2.0**，分支 `feature/v1.2.0-grouped-bar`。线上版本以实际部署为准。
 
+- [v1.2.0 分组柱状图使用说明与更新日志（2026.11.6）](docs/分组柱状图-v1.2.0-2026.11.6.md)
 - [v1.1.0 项目文件与表格结构操作（2026.11.5）](docs/项目文件与表格结构操作-2026.11.5.md)
 - [v1.0.0 工作表交互与中西文字体（2026.11.5）](docs/工作表交互与中西文字体-2026.11.5.md)
 - [v0.9.5 工作表连选与 Windows 修复（2026.11.4）](docs/工作表连选与Windows修复-v0.9.5-2026.11.4.md)

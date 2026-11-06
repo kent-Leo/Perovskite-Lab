@@ -27,6 +27,8 @@ export const palette = [
 export interface Point {
   x: number;
   y: number;
+  /** Symmetric error around y; absent means no error bar, not zero. */
+  error?: number | null;
   label?: string;
   tooltip?: string;
 }
@@ -56,6 +58,53 @@ export interface ObjectRow {
   unit: string;
   intensity: string;
   notes: string;
+}
+
+/** Grouped screening data is independent of the legacy fluorescence intensity. */
+export type ScreeningChartType = 'single' | 'grouped';
+export type GroupedInputMode = 'statistics' | 'replicates';
+export type GroupedErrorMode = 'none' | 'sd' | 'sem' | 'manual';
+export interface GroupedBarCell {
+  mean: string;
+  sd: string;
+  sem: string;
+  manualError: string;
+  /** Raw entries, including blanks, are retained when switching input modes. */
+  replicates: string[];
+}
+export interface GroupedBarSeries {
+  id: string;
+  name: string;
+  color: string;
+  visible: boolean;
+  unit?: string;
+  comment?: string;
+}
+export interface GroupedBarCategory {
+  id: string;
+  name: string;
+  cells: Record<string, GroupedBarCell>;
+}
+export interface GroupedBarOptions {
+  inputMode: GroupedInputMode;
+  errorMode: GroupedErrorMode;
+  barWidth: number;
+  innerGap: number;
+  groupGap: number;
+  fill: 'solid' | 'gradient';
+  borderColor: string;
+  borderWidth: number;
+  errorColor: string;
+  errorWidth: number;
+  errorCapWidth: number;
+  categoryAngle: number;
+}
+export interface GroupedBarSheet {
+  categories: GroupedBarCategory[];
+  series: GroupedBarSeries[];
+  options: GroupedBarOptions;
+  /** Grouped chart settings are stored with the sheet, not the global legacy chart. */
+  style: ChartStyle;
 }
 export interface CalibrationRow {
   id: string;
@@ -91,6 +140,8 @@ export function chartAxes(style: ChartStyle): Record<AxisSide, AxisStyle> {
   }])) as Record<AxisSide, AxisStyle>;
 }
 export interface ChartStyle {
+  /** Optional independent legend typography; other text keeps the chart fonts. */
+  legendFontFamily?: string;
   axes?: Partial<Record<AxisSide, Partial<AxisStyle>>>;
   primaryColor?: string;
   secondaryColor?: string;
@@ -115,7 +166,7 @@ export interface ChartStyle {
   // Show every data point's y value next to the mark (optional: older workspaces omit it).
   pointValues?: boolean;
   dashed: boolean;
-  legend: 'right' | 'bottom' | 'free' | 'none';
+  legend: 'right' | 'top' | 'bottom' | 'free' | 'none';
   // Free legend position as a fraction of the canvas width/height.
   legendX?: number;
   legendY?: number;
@@ -140,6 +191,7 @@ export interface Series {
 export interface PlotData {
   series: Series[];
   categories?: string[];
+  groupedBars?: GroupedBarOptions;
   annotation?: string;
 }
 export const uid = () => crypto.randomUUID();

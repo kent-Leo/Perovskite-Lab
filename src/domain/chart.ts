@@ -1,6 +1,6 @@
-import { chartFontStack, svgFontRuns } from './chart-fonts-2026.11.3';
+import { chartFontStack, svgFontRuns, legendTypography, type ChartTypography } from './chart-fonts-2026.11.3';
 import { fmt, numeric } from './math';
-import { chartAxes, axisSides, type AxisSide, type ChartStyle, type PlotData } from './types';
+import { chartAxes, axisSides, type AxisSide, type ChartStyle, type GroupedBarOptions, type PlotData } from './types';
 export const escapeXML = (s: string) =>
   s.replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[c]!);
 /** A readable interval (1 / 2 / 5 × 10ⁿ) that yields roughly five segments. */
@@ -31,10 +31,38 @@ export interface ChartOverlay {
   render: (layout: { left: number; top: number; width: number; height: number;
     sx: (x: number) => number; sy: (y: number) => number }) => string;
 }
+
+/** Pixel-space layout reserves a slot for each visible series, including missing cells. */
+export function groupedBarLayout(center: number, index: number, count: number, pitch: number, options: GroupedBarOptions) {
+  const gap = Math.max(0, options.innerGap);
+  const available = Math.max(1, pitch - Math.max(0, options.groupGap));
+  const width = Math.max(0.1, Math.min(options.barWidth, (available - gap * Math.max(0, count - 1)) / Math.max(1, count)));
+  const actualGap = count > 1 ? Math.min(gap, Math.max(0, (available - width * count) / (count - 1))) : 0;
+  const total = count * width + Math.max(0, count - 1) * actualGap;
+  return { x: center - total / 2 + index * (width + actualGap), width };
+}
+
+function paleColor(hex: string, fraction: number) {
+  const match = /^#([\da-f]{6})$/i.exec(hex);
+  if (!match) return hex;
+  const value = Number.parseInt(match[1], 16);
+  const channels = [value >> 16, (value >> 8) & 255, value & 255];
+  return `#${channels.map((channel) => Math.round(channel + (255 - channel) * fraction).toString(16).padStart(2, '0')).join('')}`;
+}
 export function chartSVG(data: PlotData, style: ChartStyle, overlay?: ChartOverlay): string {
   const ps = data.series.flatMap((s) => s.points);
   if (!ps.length) throw new Error('暂无可绘制数据');
-  const bar = !!data.categories, axes = chartAxes(style), fs = style.fontSize;
+  const bar = !!data.categories, grouped = data.groupedBars, axes = chartAxes(style), fs = style.fontSize;
+  if (grouped && (!bar || !data.series.every((series) => series.kind === 'bar')))
+    throw new Error('分组柱状图需要分类和柱形系列');
+  if (grouped && ps.some((p) => !Number.isFinite(p.y) || (p.error != null && (!Number.isFinite(p.error) || p.error < 0))))
+    throw new Error('柱形数值和误差必须为有效数值，误差不能为负');
+  if (grouped) {
+    for (const key of ['barWidth', 'innerGap', 'groupGap', 'borderWidth', 'errorWidth', 'errorCapWidth', 'categoryAngle'] as const)
+      if (!Number.isFinite(grouped[key]) || (key !== 'categoryAngle' && grouped[key] < 0)) throw new Error('分组图表尺寸必须为有效的非负数');
+    if (ps.some((p) => !Number.isFinite(p.y + (p.error ?? 0)) || !Number.isFinite(p.y - (p.error ?? 0))))
+      throw new Error('误差棒端点超出数值范围');
+  }
   for (const axis of Object.values(axes)) {
     if (axis.step !== undefined && (!Number.isFinite(axis.step) || axis.step < 0))
       throw new Error('刻度间隔须为大于 0 的数值，或留空自动');
@@ -42,16 +70,18 @@ export function chartSVG(data: PlotData, style: ChartStyle, overlay?: ChartOverl
         !Number.isFinite(axis.tickWidth) || axis.tickWidth < 0.5 || axis.tickWidth > 5)
       throw new Error('刻度长度须为 0–20，粗细须为 0.5–5');
   }
-  const xvals = ps.map((p) => p.x), yvals = ps.map((p) => p.y);
+  const xvals = ps.map((p) => p.x), yvals = ps.flatMap((p) =>
+    grouped && p.error != null ? [p.y - p.error, p.y + p.error] : [p.y]);
   let x0 = xvals.reduce((a, b) => Math.min(a, b), Infinity),
     x1 = xvals.reduce((a, b) => Math.max(a, b), -Infinity),
     y0 = yvals.reduce((a, b) => Math.min(a, b), 0),
     y1 = yvals.reduce((a, b) => Math.max(a, b), -Infinity);
-  if (bar) { x0 = -0.6; x1 = data.categories!.length - 0.4; }
+  if (bar) { x0 = grouped ? -0.5 : -0.6; x1 = data.categories!.length - (grouped ? 0.5 : 0.4); }
   else if (x0 === x1) { x0 -= 1; x1 += 1; }
   else if (data.series.some((s) => s.pointShape || s.arrows)) {
     const pad = (x1 - x0) * 0.1; x0 -= pad; x1 += pad;
   }
+  if (grouped) y1 = Math.max(0, y1);
   if (y0 === y1) { y0 -= 1; y1 += 1; }
   else { const pad = (y1 - y0) * 0.08; y1 += pad; if (y0 < 0) y0 -= pad; }
   const parseBound = (s: string, auto: number) => {
@@ -63,6 +93,7 @@ export function chartSVG(data: PlotData, style: ChartStyle, overlay?: ChartOverl
   x0 = parseBound(style.xMin, x0); x1 = parseBound(style.xMax, x1);
   y0 = parseBound(style.yMin, y0); y1 = parseBound(style.yMax, y1);
   if (x1 <= x0 || y1 <= y0) throw new Error('坐标最大值必须大于最小值');
+  if (grouped && ![x0, x1, y0, y1, x1 - x0, y1 - y0].every(Number.isFinite)) throw new Error('分组图表范围超出数值范围');
   const ticksFor = (side: AxisSide) => {
     const horizontal = side === 'bottom' || side === 'top';
     if (horizontal && bar) return data.categories!.map((label, value) => ({ value, label }))
@@ -73,16 +104,24 @@ export function chartSVG(data: PlotData, style: ChartStyle, overlay?: ChartOverl
   };
   const labelWidth = (s: string, size = fs) => Array.from(s).reduce(
     (n, c) => n + (c.codePointAt(0)! > 0x2e80 ? 1 : 0.65) * size, 0);
+  const valueWidth = grouped && style.pointValues ? ps.reduce((max, p) => Math.max(max, labelWidth(fmt(p.y, 4), Math.max(9, fs * 0.75))), 0) : 0;
+  const markWidth = Math.max(valueWidth, grouped && ps.some((p) => p.error != null) ? grouped.errorCapWidth : 0);
+  const layoutOptions = grouped ? { ...grouped,
+    innerGap: Math.max(grouped.innerGap, markWidth + 6 - grouped.barWidth),
+    groupGap: Math.max(grouped.groupGap, valueWidth + 6 - grouped.barWidth),
+  } : undefined;
   const outward = (side: AxisSide) => {
     const a = axes[side];
     return a.ticks === 'out' || a.ticks === 'both' ? a.tickLength : 0;
   };
+  const categoryAngle = grouped ? Math.max(-90, Math.min(90, grouped.categoryAngle)) : -30;
+  const categoryRadians = Math.abs(categoryAngle) * Math.PI / 180;
   const margin = (side: AxisSide) => {
     const a = axes[side];
     if (!a.visible) return 22;
     const horizontal = side === 'bottom' || side === 'top';
     const tickSpace = !a.tickLabels ? 0 : horizontal
-      ? bar ? Math.max(fs + 12, ...ticksFor(side).map((t) => labelWidth(t.label) * 0.5 + fs + 10 + (side === 'top' ? fs * 2 : 0))) : fs + 14
+      ? bar ? Math.max(fs + 12, ...ticksFor(side).map((t) => labelWidth(t.label) * (grouped ? Math.sin(categoryRadians) : 0.5) + fs + 10 + (side === 'top' ? fs * 2 : 0))) : fs + 14
       : Math.max(0, ...ticksFor(side).map((t) => labelWidth(t.label))) + 10;
     return Math.max(30, outward(side) + tickSpace + (a.label ? fs + 25 + (overlay?.titlePadding ?? 0) : 12));
   };
@@ -95,26 +134,31 @@ export function chartSVG(data: PlotData, style: ChartStyle, overlay?: ChartOverl
   const legendWidth = Math.max(0, ...legendItems.map((s) => labelWidth(s.name, legendFontSize)));
   const hasLegend = style.legend !== 'none' && legendItems.length > 0;
   const bottomLegend = style.legend === 'bottom' && hasLegend;
+  const topLegend = style.legend === 'top' && hasLegend;
   const bottomAxis = margin('bottom'), topAxis = margin('top'), rightAxis = margin('right');
   // Leave room for long axis titles and rotated category labels in exported figures.
   const verticalTitle = Math.max(...(['left', 'right'] as const).map((side) =>
     axes[side].visible ? labelWidth(axes[side].label, fs + 1) + 25 : 0));
   const horizontalTitle = Math.max(...(['top', 'bottom'] as const).map((side) =>
     axes[side].visible ? labelWidth(axes[side].label, fs + 1) + 25 : 0));
-  const edgeLabels = bar ? Math.max(0, ...(data.categories ?? []).map((s) => labelWidth(s) * 0.866)) : fs * 3;
+  const edgeLabels = bar ? Math.max(0, ...(data.categories ?? []).map((s) => labelWidth(s) * (grouped ? Math.cos(categoryRadians) : 0.866))) + (grouped ? fs : 0) : fs * 3;
   const left = Math.max(margin('left'), axes.bottom.visible && axes.bottom.tickLabels ? edgeLabels : 0),
-    top = topAxis + (style.title ? fs + 35 : 10),
-    right = Math.max(rightAxis, overlay?.rightMargin ?? 0, axes.top.visible && axes.top.tickLabels ? edgeLabels : 0) +
+    top = topAxis + (style.title ? fs + 35 : 10) + (topLegend ? legendRows * legendRow + 8 : 0),
+    right = Math.max(rightAxis, overlay?.rightMargin ?? 0, (axes.top.visible && axes.top.tickLabels || grouped && categoryAngle >= 0 && axes.bottom.tickLabels) ? edgeLabels : 0) +
       (style.legend === 'right' && hasLegend ? Math.max(200, legendWidth + 80) : 0),
     bottom = bottomAxis + (bottomLegend ? legendRows * legendRow + legendRow : 10);
   const horizontalTicks = Math.max(0, ...(['top', 'bottom'] as const).map((side) => {
     const axis = axes[side];
     if (!axis.visible || !axis.tickLabels) return 0;
     const width = Math.max(0, ...ticksFor(side).map((t) => labelWidth(t.label)));
-    return bar ? (width * 0.866 + 16) * (data.categories?.length ?? 0)
+    return bar ? (width * (grouped ? Math.cos(categoryRadians) : 0.866) + 16) * (data.categories?.length ?? 0)
       : (width + 16) * Math.max(1, ticksFor(side).length);
   }));
-  const W = Math.max(1000, overlay?.minWidth ?? 0, left + right + Math.max(550, horizontalTitle, horizontalTicks)),
+  const groupedPitch = layoutOptions ? Math.max(0, layoutOptions.barWidth) * data.series.length +
+    Math.max(0, layoutOptions.innerGap) * Math.max(0, data.series.length - 1) + Math.max(0, layoutOptions.groupGap) : 0;
+  const groupedWidth = grouped ? groupedPitch * (data.categories?.length ?? 0) : 0;
+  const legendSpan = (bottomLegend || topLegend) ? Math.min(3, legendItems.length) * (legendWidth + 48) : 0;
+  const W = Math.max(1000, overlay?.minWidth ?? 0, left + right + Math.max(550, horizontalTitle, horizontalTicks, groupedWidth, legendSpan)),
     H = Math.max(600, overlay?.minHeight ?? 0, top + bottom + Math.max(350, verticalTitle),
       style.legend === 'right' && hasLegend
         ? top + legendItems.length * legendRow + bottom
@@ -123,26 +167,46 @@ export function chartSVG(data: PlotData, style: ChartStyle, overlay?: ChartOverl
   const sx = (x: number) => left + ((x - x0) / (x1 - x0)) * pw,
     sy = (y: number) => top + ph - ((y - y0) / (y1 - y0)) * ph;
   const fg = overlay?.foreground ?? '#243b39', out: string[] = [];
-  const text = (x: number, y: number, s: string, anchor = 'start', size = fs, extra = '') =>
-    out.push(`<text x="${x}" y="${y}" fill="${fg}" font-size="${size}" text-anchor="${anchor}" ${extra}>${svgFontRuns(s, style)}</text>`);
+  // Multiple sheet charts share one DOM. Equal clip geometries may share an ID;
+  // different geometries and colors must not accidentally use another SVG's defs.
+  const clipId = grouped ? `grouped-clip-${[left, top, pw, ph].map((value) => Math.round(value * 1000)).join('-')}` : 'plot-clip';
+  const gradientId = (index: number) => `grouped-fill-${data.series[index].color.replace('#', '')}-${index}`;
+  const text = (x: number, y: number, s: string, anchor = 'start', size = fs, extra = '', typography: ChartTypography = style) =>
+    out.push(`<text x="${x}" y="${y}" fill="${fg}" font-size="${size}" text-anchor="${anchor}" ${extra}>${svgFontRuns(s, typography)}</text>`);
   const line = (x1: number, y1: number, x2: number, y2: number, color = fg, width = 1.1, dashed = false) =>
     out.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${width}"${dashed ? ' stroke-dasharray="7 5"' : ''}/>`);
-  out.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeXML(style.title || '科研图表')}" font-family="${escapeXML(chartFontStack(style))}"><rect width="${W}" height="${H}" fill="#ffffff"/><defs><clipPath id="plot-clip"><rect x="${left}" y="${top}" width="${pw}" height="${ph}"/></clipPath></defs>`);
+  const gradients = grouped?.fill === 'gradient' ? data.series.map((series, i) => `<linearGradient id="${gradientId(i)}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${paleColor(series.color, 0.36)}"/><stop offset="1" stop-color="${series.color}"/></linearGradient>`).join('') : '';
+  out.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeXML(style.title || '科研图表')}" font-family="${escapeXML(chartFontStack(style))}"><rect width="${W}" height="${H}" fill="#ffffff"/><defs><clipPath id="${clipId}"><rect x="${left}" y="${top}" width="${pw}" height="${ph}"/></clipPath>${gradients}</defs>`);
   if (style.title) text(W / 2, fs + 12, style.title, 'middle', fs + 5);
   if (style.grid) {
     for (const { value } of ticksFor('left')) line(left, sy(value), left + pw, sy(value), '#e5ebe9', 0.8);
     if (!bar) for (const { value } of ticksFor('bottom')) line(sx(value), top, sx(value), top + ph, '#e5ebe9', 0.8);
   }
-  out.push('<g clip-path="url(#plot-clip)">');
-  for (const s of data.series) {
+  out.push(`<g clip-path="url(#${clipId})">`);
+  for (const [seriesIndex, s] of data.series.entries()) {
     if (s.kind === 'bar') {
       for (const p of s.points) {
-        const bw = (pw / (x1 - x0)) * 0.6,
+        const box = layoutOptions ? groupedBarLayout(sx(p.x), seriesIndex, data.series.length, pw / (x1 - x0), layoutOptions) : null,
+          bw = box?.width ?? (pw / (x1 - x0)) * 0.6,
+          x = box?.x ?? sx(p.x) - bw / 2,
           y = sy(p.y),
           z = sy(0);
-        out.push(
-          `<rect x="${sx(p.x) - bw / 2}" y="${Math.min(y, z)}" width="${bw}" height="${Math.max(0.6, Math.abs(y - z))}" fill="${s.color}"/>`,
-        );
+        const barY = Math.min(y, z), barHeight = Math.max(0.6, Math.abs(y - z));
+        if (grouped) {
+          out.push(`<g data-grouped-bar="true" data-series-index="${seriesIndex}" data-category-index="${p.x}">`);
+          out.push(`<rect x="${x}" y="${barY}" width="${bw}" height="${barHeight}" fill="${grouped.fill === 'gradient' ? `url(#${gradientId(seriesIndex)})` : s.color}"/>`);
+          if (grouped.borderWidth > 0)
+            out.push(`<rect x="${x}" y="${barY}" width="${bw}" height="${barHeight}" fill="none" stroke="${grouped.borderColor}" stroke-width="${grouped.borderWidth}"/>`);
+          out.push('</g>');
+          if (p.error != null) {
+            const cx = x + bw / 2, high = sy(p.y + p.error), low = sy(p.y - p.error), cap = grouped.errorCapWidth / 2;
+            out.push(`<g data-error-bar="true" data-series-index="${seriesIndex}" data-category-index="${p.x}">`);
+            line(cx, high, cx, low, grouped.errorColor, grouped.errorWidth);
+            line(cx - cap, high, cx + cap, high, grouped.errorColor, grouped.errorWidth);
+            line(cx - cap, low, cx + cap, low, grouped.errorColor, grouped.errorWidth);
+            out.push('</g>');
+          }
+        } else out.push(`<rect x="${x}" y="${barY}" width="${bw}" height="${barHeight}" fill="${s.color}"/>`);
       }
     } else {
       if (s.kind !== 'scatter')
@@ -185,20 +249,25 @@ export function chartSVG(data: PlotData, style: ChartStyle, overlay?: ChartOverl
       clampX = (x: number) => Math.max(left + 2, Math.min(left + pw - 2, x));
     const valueAnchor = (x: number) =>
       x - left < 40 ? 'start' : left + pw - x < 40 ? 'end' : 'middle';
-    const valueLabel = (x: number, y: number, value: number) =>
-      text(clampX(x), y, fmt(value, 4), valueAnchor(x), valueFontSize, 'data-point-value="true"');
-    for (const s of data.series) {
+    const valueLabel = (x: number, y: number, value: number) => {
+      const halfWidth = labelWidth(fmt(value, 4), valueFontSize) / 2 + 2;
+      text(grouped ? Math.max(left + halfWidth, Math.min(left + pw - halfWidth, x)) : clampX(x),
+        y, fmt(value, 4), grouped ? 'middle' : valueAnchor(x), valueFontSize, 'data-point-value="true"');
+    };
+    for (const [seriesIndex, s] of data.series.entries()) {
       // Derived series (for example a calibration fit line) are not data points.
       if (s.showPointValues === false) continue;
       if (s.kind === 'bar') {
         for (const p of s.points) {
-          const y = sy(p.y);
+          if (grouped && (p.x < x0 || p.x > x1 || p.y < y0 || p.y > y1)) continue;
+          const y = sy(p.y + (grouped && p.error != null ? (p.y >= 0 ? p.error : -p.error) : 0));
           // Positive bars carry the value above the cap, negative bars below the base.
           const baseline =
             p.y >= 0
               ? Math.max(top + valueFontSize, y - 5)
               : Math.min(top + ph - 3, y + valueFontSize + 5);
-          valueLabel(sx(p.x), baseline, p.y);
+          const box = layoutOptions ? groupedBarLayout(sx(p.x), seriesIndex, data.series.length, pw / (x1 - x0), layoutOptions) : null;
+          valueLabel(box ? box.x + box.width / 2 : sx(p.x), baseline, p.y);
         }
       } else {
         for (const p of s.points) {
@@ -236,8 +305,9 @@ export function chartSVG(data: PlotData, style: ChartStyle, overlay?: ChartOverl
     if (a.tickLabels) for (const { value, label } of ticksFor(side)) {
       if (horizontal) {
         const x = sx(value), y = baseline + sign * (outward(side) + fs + 8);
-        text(x, y, label, bar ? side === 'bottom' ? 'end' : 'start' : 'middle', fs,
-          bar ? `transform="rotate(-30 ${x} ${y})"` : '');
+        const angle = bar ? categoryAngle : 0;
+        const anchor = !bar || angle === 0 ? 'middle' : (side === 'bottom') === (angle < 0) ? 'end' : 'start';
+        text(x, y, label, anchor, fs, bar && angle ? `transform="rotate(${angle} ${x} ${y})"` : '');
       } else text(baseline + sign * (outward(side) + 10), sy(value) + fs * 0.34, label, side === 'left' ? 'end' : 'start');
     }
     out.push('</g>');
@@ -255,6 +325,8 @@ export function chartSVG(data: PlotData, style: ChartStyle, overlay?: ChartOverl
   }
   if (data.annotation) text(left + 15, top + 25, data.annotation, 'start', fs);
   if (hasLegend) {
+    const legendStyle = legendTypography(style);
+    const legendAttributes = style.legendFontFamily ? `font-family="${escapeXML(chartFontStack(legendStyle))}"` : '';
     let legendX = 0,
       legendY = 0;
     if (style.legend === 'right') {
@@ -263,6 +335,9 @@ export function chartSVG(data: PlotData, style: ChartStyle, overlay?: ChartOverl
     } else if (style.legend === 'bottom') {
       legendX = left;
       legendY = H - (legendRows - 1) * legendRow - 25;
+    } else if (style.legend === 'top') {
+      legendX = left;
+      legendY = style.title ? fs + 37 : fs + 8;
     } else {
       const contentWidth = 31 + legendWidth,
         contentHeight = (legendItems.length - 1) * legendRow,
@@ -292,10 +367,10 @@ export function chartSVG(data: PlotData, style: ChartStyle, overlay?: ChartOverl
         out.push(
           `<rect x="${x}" y="${y - legendFontSize + 2}" width="14" height="${legendFontSize}" rx="2" fill="${s.color}"/>`,
         );
-        text(x + 22, y, s.name, 'start', legendFontSize);
+        text(x + 22, y, s.name, 'start', legendFontSize, legendAttributes, legendStyle);
       } else {
         line(x, y - 5, x + 23, y - 5, s.color, style.lineWidth, s.dashed);
-        text(x + 31, y, s.name, 'start', legendFontSize);
+        text(x + 31, y, s.name, 'start', legendFontSize, legendAttributes, legendStyle);
       }
     });
     out.push('</g>');

@@ -20,7 +20,15 @@ export type ChartTypography = {
   cjkFontFamily?: string;
   /** 西文字体；未设置时沿用 fontFamily，旧工作区保持原样。 */
   latinFontFamily?: string;
+  legendFontFamily?: string;
 };
+
+export function legendTypography(style: ChartTypography): ChartTypography {
+  if (!style.legendFontFamily) return style;
+  const family = style.legendFontFamily;
+  return { fontFamily: family, latinFontFamily: family,
+    cjkFontFamily: family === SANS_FONT_FAMILY || family === ARIAL_FONT_FAMILY ? SANS_FONT_FAMILY : SONG_FONT_FAMILY };
+}
 type EmbeddableFont = { family: string; file: string };
 
 export const CJK_FONT_OPTIONS = [
